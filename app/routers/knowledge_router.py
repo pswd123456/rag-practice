@@ -4,13 +4,13 @@ from typing import Sequence
 
 from app.db.session import get_session
 from app.services import knowledge_crud
-from app.models.knowledge_models import KnowledgeCreate, KnowledgeUpdate, KnowledgeRead
+from app.models.knowledge_model import KnowledgeCreate, KnowledgeUpdate, KnowledgeRead
 
 router = APIRouter()
 
 @router.post("/knowledges", response_model=KnowledgeRead)
 def handle_create_knowledge(
-    *,
+    *, #强制关键字参数
     knowledge_in: KnowledgeCreate,
     db: Session = Depends(get_session),
 ):

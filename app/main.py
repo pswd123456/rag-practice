@@ -1,14 +1,10 @@
 import logging
 import logging.config
 import os
-# import asyncio
-from contextlib import AbstractAsyncContextManager
-from typing import Callable
-
 from fastapi import FastAPI
 
 from app.db.session import create_db_and_tables
-from app.routers import knowledge_routers
+from app.routers import knowledge_router
 from app.core.config import settings
 from app.core.logging_setup import get_logging_config
 
@@ -71,7 +67,7 @@ app = FastAPI(
 # 最佳实践: 添加 prefix 和 tags
 # app.include_router(chat_routers.router, prefix="/chat", tags=["Chat"])
 app.include_router(
-    knowledge_routers.router, 
+    knowledge_router.router, 
     prefix="/knowledge", 
     tags=["Knowledge"]
 )
