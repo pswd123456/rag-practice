@@ -1,0 +1,32 @@
+# mkdocs.yml
+site_name: "我的 RAG 实验项目"
+site_description: "一个用于 RAG 实验和学习的 API 项目"
+
+# 1. 使用 Material 主题
+theme:
+  name: material
+  palette:
+    - scheme: default # 日间模式
+    - scheme: slate  # 夜间模式
+  features:
+    - navigation.tabs # 顶部导航
+    - navigation.top  # 返回顶部按钮
+    - search.suggest  # 搜索建议
+
+# 2. 配置 mkdocstrings 插件
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python: # 专门处理 Python
+          options:
+            docstring_style: google # 告诉它你用的是 Google 风格
+
+# 3. 定义导航栏
+nav:
+  - "首页": index.md
+  - "RAG 实验": 
+    - "实验日志": experiments/log.md
+  - "API 参考":
+    - "RAG 管道": reference/pipeline.md
+    - "核心工具": reference/util.md
