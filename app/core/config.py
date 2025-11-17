@@ -19,20 +19,25 @@ class Settings(BaseSettings):
     应用配置类
     Pydantic 会自动从 .env 文件和环境变量中读取这些值
     """
-    
+
+    PROJECT_NAME: str
     # --- 1. 从 .env 读取的 "基础" 变量 ---
     # Pydantic 会自动进行类型转换和验证
+    
+    DASHSCOPE_API_KEY: str
     QWEN_BASE_URL: str
     VECTOR_DB_NAME: str
     CHROMADB_COLLECTION_NAME: str
     TOP_K: int
+
     CHUNK_SIZE: int
     CHUNK_OVERLAP: int
+
     TESTSET_NAME: str
     TESTSET_SIZE: int
     EVALUATION_FILE_NAME: str
+    
     DATABASE_URL: str
-    PROJECT_NAME: str
     
     # --- 2. 不依赖其他配置的 "常量" 路径 ---
     #    这些可以直接使用 PROJECT_ROOT，它们是固定的

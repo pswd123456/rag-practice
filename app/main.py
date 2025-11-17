@@ -4,7 +4,7 @@ import os
 from fastapi import FastAPI
 
 from app.db.session import create_db_and_tables
-from app.routers import knowledge_router
+from app.routers import knowledge_router, chat_router
 from app.core.config import settings
 from app.core.logging_setup import get_logging_config
 
@@ -65,7 +65,12 @@ app = FastAPI(
 
 # --- 6. 包含 API 路由 ---
 # 最佳实践: 添加 prefix 和 tags
-# app.include_router(chat_routers.router, prefix="/chat", tags=["Chat"])
+app.include_router(
+    chat_router.router, 
+    prefix="/chat", 
+    tags=["Chat"]
+)
+
 app.include_router(
     knowledge_router.router, 
     prefix="/knowledge", 

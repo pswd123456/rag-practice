@@ -4,8 +4,10 @@ import app.services.llm.llm_factory as llm_factory
 from app.core.config import settings
 from app.services.pipeline import RAGPipeline
 import logging
+from functools import lru_cache
 
 logger = logging.getLogger(__name__)
+@lru_cache(maxsize=1)
 def run_rag_chain():
     try:
         # (这部分逻辑和你 main.py 的 setup 部分完全一致)
@@ -20,13 +22,13 @@ def run_rag_chain():
         retriever = vector_store.as_retriever(search_kwargs={"k": settings.TOP_K})
 
         pipeline = RAGPipeline(llm=llm, retriever=retriever)
-        rag_chain = pipeline.get_rag_chain()
+        # rag_chain = pipeline.get_rag_chain()
 
         logger.info("模型和 RAG 管道加载成功，API 已就绪。")
 
     except Exception as e:
         logger.critical(f"API 启动失败，加载模型出错: {e}", exc_info=True)
         # 在实际生产中，你可能希望让应用在这里失败退出
-        rag_chain = None
+        # rag_chain = None
 
-    return rag_chain
+    return pipeline

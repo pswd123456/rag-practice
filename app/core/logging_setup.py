@@ -6,7 +6,6 @@ def get_logging_config(log_file_path: str) -> Dict[str, Any]:
     根据传入的日志文件路径，生成日志配置字典。
     """
     
-    # 从 main.py 复制过来的文件格式化器定义
     FILE_FORMATTER = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 
     config = {
@@ -54,18 +53,6 @@ def get_logging_config(log_file_path: str) -> Dict[str, Any]:
 
         # 4. 配置其他 logger
         'loggers': {
-
-            'core':{
-                'level': 'DEBUG',
-                'handlers': ['console_rich', 'file_handler'],
-                'propagate': False
-            },
-            
-            '__main__':{
-                'level': 'DEBUG',
-                'handlers': ['console_rich', 'file_handler'],
-                'propagate': False
-            },
 
             'evaluation':{
                 'level': 'DEBUG',

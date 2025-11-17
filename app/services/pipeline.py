@@ -79,6 +79,9 @@ class RAGPipeline:
         """获取检索器实例。"""
         return self.retriever
     
+    def async_query(self, query:str):
+        return self.rag_chain.ainvoke(query)
+
     def get_llm(self):
         """获取 LLM 实例。"""
         return self.llm

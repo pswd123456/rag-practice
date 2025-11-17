@@ -14,7 +14,7 @@ def setup_qwen_llm(model_name: str):
     """
     logger.info("正在设置 LLM...")
     # 从环境变量读取 API 密钥
-    dashscope_api_key = os.getenv("DASHSCOPE_API_KEY")
+    dashscope_api_key = settings.DASHSCOPE_API_KEY
     if not dashscope_api_key:
         logger.error("llm apikey 未设置！")
         raise ValueError("LLM apikey is not set")
