@@ -1,7 +1,12 @@
 import logging
+
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFLoader, DirectoryLoader
+from langchain_core.documents import Document
+
 from pathlib import Path
+from typing import Iterable, List
+
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -43,24 +48,44 @@ def get_text_splitter():
     logger.debug(f"文本分割器设置完成 (Chunk size: {settings.CHUNK_SIZE}, Overlap: {settings.CHUNK_OVERLAP})。")
     return text_splitter
 
-def get_prepared_docs():
+def load_raw_docs() -> List[Document]:
     """
-    加载并分割 PDF 文档。
+    从配置的目录或文件加载原始 Document。
+    """
+    loader = create_document_loader()
+    docs = loader.load()
+    logger.info("原始文档加载完成，共 %s 条。", len(docs))
+    return docs
 
-    :return: 分割后的文档列表 (List[Document])
+
+def normalize_metadata(docs: Iterable[Document]) -> List[Document]:
+    """
+    标准化 Document metadata，确保包含 `source` 字段。
+    """
+    normalized: List[Document] = []
+    for doc in docs:
+        metadata = dict(doc.metadata or {})
+        metadata.setdefault("source", metadata.get("source", str(settings.SOURCH_FILE_DIR)))
+        normalized.append(Document(page_content=doc.page_content, metadata=metadata))
+    logger.debug("元数据标准化完成。")
+    return normalized
+
+
+def split_docs(docs: Iterable[Document]) -> List[Document]:
+    """
+    对 Document 进行分块。
+    """
+    splitter = get_text_splitter()
+    splitted_docs = splitter.split_documents(list(docs))
+    logger.info("文档分割完成，共 %s 个块。", len(splitted_docs))
+    return splitted_docs
+
+
+def get_prepared_docs() -> List[Document]:
+    """
+    加载、清洗并分割文档。
     """
     logger.info("开始加载和分割源文档...")
-
-    # 1. 加载 PDF
-    loader = create_document_loader()
-
-    logger.info(f"正在从 {settings.SOURCH_FILE_DIR} 加载文档...")
-    docs = loader.load()
-    logger.info(f"原始 PDF 加载了 {len(docs)} 页。")
-
-    # 2. 分割文档
-    splitter = get_text_splitter()
-    splitted_docs = splitter.split_documents(docs)
-
-    logger.info(f"文档分割完成。共 {len(splitted_docs)} 个文档块 (chunks)。")
-    return splitted_docs
+    raw_docs = load_raw_docs()
+    normalized_docs = normalize_metadata(raw_docs)
+    return split_docs(normalized_docs)
