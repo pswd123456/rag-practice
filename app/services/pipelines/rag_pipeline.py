@@ -8,7 +8,7 @@ import logging
 from typing import List
 
 from langchain_core.documents import Document
-from langchain_core.runnables import RunnablePassthrough
+from langchain_core.runnables import RunnablePassthrough, RunnableLambda
 
 from app.services.generation.qa_service import QAService
 from app.services.retrieval.service import RetrievalService
@@ -27,9 +27,15 @@ class RAGPipeline:
 
         # 构建 LCEL 链以兼容 LangChain 生态
         self.generation_chain = self.qa_service.chain
+        
+        retrieval_node = RunnableLambda(
+            func = self.retrieval_service.fetch,
+            afunc = self.retrieval_service.afetch
+        )
+        
         self.rag_chain = (
             {
-                "context": self.retrieval_service.retriever | self._format_docs,
+                "context": retrieval_node | self._format_docs,
                 "question": RunnablePassthrough(),
             }
             | self.generation_chain
@@ -65,8 +71,8 @@ class RAGPipeline:
         async for chunk in self.rag_chain.astream(query):
             yield chunk
 
-    def get_rag_chain(self):
-        return self.rag_chain
+    # def get_rag_chain(self):
+    #     return self.rag_chain
 
     def get_retrieval_service(self) -> RetrievalService:
         return self.retrieval_service
