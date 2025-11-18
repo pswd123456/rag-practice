@@ -60,6 +60,10 @@ class RAGPipeline:
     async def async_query(self, question: str, include_docs: bool = False):
         docs = await self.retrieval_service.afetch(question)
         return await self._prepare_answer_async(question, docs, include_docs)
+    
+    async def astream_answer(self, query: str):
+        async for chunk in self.rag_chain.astream(query):
+            yield chunk
 
     def get_rag_chain(self):
         return self.rag_chain

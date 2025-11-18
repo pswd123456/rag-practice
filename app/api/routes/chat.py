@@ -1,16 +1,19 @@
 import logging
-from app.schemas.chat import QueryRequest, QueryResponse
-from app.services.pipelines.pipeline import RAGPipeline
+
 from fastapi import APIRouter, Depends
-from app.services.generation.chat import run_rag_chain
+from fastapi.responses import StreamingResponse
+
+from app.api.deps import get_rag_pipeline
+from app.domain.schemas import QueryRequest, QueryResponse
+from app.services.pipelines import RAGPipeline
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 @router.post("/query", response_model=QueryResponse)
 async def handle_query(
-    request: QueryRequest, 
-    rag_chain: RAGPipeline = Depends(run_rag_chain)
+    request: QueryRequest,
+    rag_chain: RAGPipeline = Depends(get_rag_pipeline),
 ):
     """
     接收用户查询并返回 RAG 管道的答案。
@@ -24,3 +27,21 @@ async def handle_query(
     response_text = await rag_chain.async_query(request.query)
 
     return {"answer": response_text}
+
+
+@router.post("/stream")
+async def stream_query(
+    request: QueryRequest,
+    rag_chain: RAGPipeline = Depends(get_rag_pipeline),
+):
+    """
+    以流式方式返回回答，便于前端逐步渲染。
+    """
+    async def event_generator():
+        """
+        生成事件，每个事件包含一个回答片段。
+        """
+        async for token in rag_chain.astream_answer(request.query):
+            yield token
+    
+    return StreamingResponse(event_generator(), media_type="text/plain")
