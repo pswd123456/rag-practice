@@ -1,5 +1,5 @@
 from sqlmodel import Session, select
-from app.models.knowledge_model import Knowledge, KnowledgeCreate, KnowledgeUpdate
+from app.domain.models import Knowledge, KnowledgeCreate, KnowledgeUpdate
 from fastapi import HTTPException
 from typing import Sequence
 def create_knowledge(db: Session, knowledge_to_create: KnowledgeCreate) -> Knowledge:
