@@ -1,1 +1,2 @@
 from .vector_store import setup_vector_store
+from .vector_store_manager import VectorStoreManager

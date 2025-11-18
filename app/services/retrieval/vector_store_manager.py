@@ -10,7 +10,6 @@ from app.services.ingest import build_or_get_vector_store
 
 logger = logging.getLogger(__name__)
 
-
 class VectorStoreManager:
     """
     管理向量数据库生命周期，提供热加载与统计接口。
