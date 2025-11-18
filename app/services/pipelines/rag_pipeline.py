@@ -49,23 +49,25 @@ class RAGPipeline:
         logger.debug("格式化后的上下文长度: %s 字符", len(formatted))
         return formatted
 
-    def _prepare_answer(self, question: str, docs: List[Document], include_docs: bool):
+    def _prepare_answer(self, question: str, docs: List[Document]):
+        """同步生成答案，返回答案和文档"""
         context = self._format_docs(docs)
         answer = self.qa_service.invoke(question, context)
-        return (answer, docs) if include_docs else answer
+        return answer, docs
 
-    async def _prepare_answer_async(self, question: str, docs: List[Document], include_docs: bool):
+    async def _prepare_answer_async(self, question: str, docs: List[Document]):
+        """异步生成答案，返回答案和文档"""
         context = self._format_docs(docs)
         answer = await self.qa_service.ainvoke(question, context)
-        return (answer, docs) if include_docs else answer
+        return answer, docs
 
-    def query(self, question: str, include_docs: bool = False):
+    def query(self, question: str):
         docs = self.retrieval_service.fetch(question)
-        return self._prepare_answer(question, docs, include_docs)
+        return self._prepare_answer(question, docs)
 
-    async def async_query(self, question: str, include_docs: bool = False):
+    async def async_query(self, question: str):
         docs = await self.retrieval_service.afetch(question)
-        return await self._prepare_answer_async(question, docs, include_docs)
+        return await self._prepare_answer_async(question, docs)
     
     async def astream_answer(self, query: str):
         async for chunk in self.rag_chain.astream(query):

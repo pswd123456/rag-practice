@@ -4,8 +4,10 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 
 from app.api.deps import get_rag_pipeline
-from app.domain.schemas import QueryRequest, QueryResponse
+from app.domain.schemas import QueryRequest, QueryResponse, Source
 from app.services.pipelines import RAGPipeline
+from typing import List
+from langchain_core.documents import Document
 
 logger = logging.getLogger(__name__)
 
@@ -23,10 +25,30 @@ async def handle_query(
 
     logger.debug(f"收到 API 查询: {request.query}")
 
-    # 使用 .ainvoke() 来进行异步调用 (FastAPI 的最佳实践)
-    response_text = await rag_chain.async_query(request.query)
+    # 使用 .async_query()，它现在返回 (answer_text, docs)
+    response_text, docs = await rag_chain.async_query(request.query)
 
-    return {"answer": response_text}
+    sources_list: List[Source] = []
+
+    for doc in docs:
+        metadata = doc.metadata
+        
+        # 从 metadata 中提取关键信息
+        source_filename = metadata.get("source", "未知文件")
+        page_number = metadata.get("page")
+        chunk_id = metadata.get("doc_id") # 我们在 Worker 中注入的 doc_id (Document ID)
+
+        sources_list.append(Source(
+            source_filename=source_filename,
+            page_number=int(page_number) if page_number is not None else None,
+            chunk_content=doc.page_content, # 返回切片内容
+            chunk_id=str(chunk_id) if chunk_id is not None else None,
+        ))
+
+    return QueryResponse(
+            answer=response_text,
+            sources=sources_list
+        )
 
 
 @router.post("/stream", response_model=QueryResponse)

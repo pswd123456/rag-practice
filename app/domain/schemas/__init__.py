@@ -1,2 +1,2 @@
-from .chat import QueryRequest, QueryResponse
+from .chat import QueryRequest, QueryResponse, Source
 
