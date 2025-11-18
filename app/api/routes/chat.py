@@ -29,7 +29,7 @@ async def handle_query(
     return {"answer": response_text}
 
 
-@router.post("/stream")
+@router.post("/stream", response_model=QueryResponse)
 async def stream_query(
     request: QueryRequest,
     rag_chain: RAGPipeline = Depends(get_rag_pipeline),
@@ -41,6 +41,8 @@ async def stream_query(
         """
         生成事件，每个事件包含一个回答片段。
         """
+        logger.debug(f"收到 API 查询: {request.query}")        
+            
         async for token in rag_chain.astream_answer(request.query):
             yield token
     
