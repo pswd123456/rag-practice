@@ -9,10 +9,10 @@ RAG 应用主入口 (main.py)
 4. 运行用户交互式查询循环
 """
 from app.core.config import settings
-import app.services.llm.llm_factory
-from app.services.pipeline import RAGPipeline   
-import app.services.embedding.embedding_factory as util
-import app.services.ingest as ingest
+import app.services.factories.llm_factory
+from app.services.pipelines.pipeline import RAGPipeline   
+import app.services.factories.embedding_factory as util
+import app.services.ingest.ingest as ingest
 import logging
 import logging.config # 1. 导入 logging.config
 import sys
@@ -57,7 +57,7 @@ def main():
 
         logger.info("开始初始化 LLM 和向量模型...")
         embed_model = util.setup_hf_embed_model("Qwen3-Embedding-0.6B")
-        llm = app.services.llm.llm_factory.setup_qwen_llm("qwen-flash")
+        llm = app.services.factories.llm_factory.setup_qwen_llm("qwen-flash")
         
         logger.info("开始构建/加载向量数据库...")
         vector_store = ingest.build_or_get_vector_store(collection_name, embed_model)

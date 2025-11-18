@@ -1,8 +1,8 @@
 import logging
 from app.schemas.chat import QueryRequest, QueryResponse
-from app.services.pipeline import RAGPipeline
+from app.services.pipelines.pipeline import RAGPipeline
 from fastapi import APIRouter, Depends
-from app.services.chat import run_rag_chain
+from app.services.generation.chat import run_rag_chain
 
 logger = logging.getLogger(__name__)
 

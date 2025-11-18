@@ -1,9 +1,9 @@
 from app.core.config import settings
-from app.services.llm.llm_factory import setup_qwen_llm
-from app.services.loader import get_prepared_docs
+from app.services.factories.llm_factory import setup_qwen_llm
+from app.services.ingest.loader import get_prepared_docs
 from ragas.llms import LangchainLLMWrapper
 from ragas.embeddings import LangchainEmbeddingsWrapper
-from app.services.embedding.embedding_factory import setup_hf_embed_model
+from app.services.factories.embedding_factory import setup_hf_embed_model
 from ragas.testset import TestsetGenerator
 import nest_asyncio
 import logging

@@ -24,10 +24,10 @@ from ragas import evaluate
 
 # --- 项目内部导入 ---
 from app.core.config import settings
-from app.services import ingest
-from app.services.llm.llm_factory import setup_qwen_llm
-from app.services.embedding.embedding_factory import setup_hf_embed_model
-from app.services.pipeline import RAGPipeline
+from app.services.ingest import ingest
+from app.services.factories.llm_factory import setup_qwen_llm
+from app.services.factories.embedding_factory import setup_hf_embed_model
+from app.services.pipelines.pipeline import RAGPipeline
 
 # --- 日志和标准库导入 ---
 import logging

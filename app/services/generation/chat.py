@@ -1,8 +1,8 @@
 import app.services.factories.embedding_factory as util
-import app.services.ingest as ingest
+import app.services.ingest.ingest as ingest
 import app.services.factories.llm_factory as llm_factory
 from app.core.config import settings
-from app.services.pipeline import RAGPipeline
+from app.services.pipelines.pipeline import RAGPipeline
 import logging
 from functools import lru_cache
 
