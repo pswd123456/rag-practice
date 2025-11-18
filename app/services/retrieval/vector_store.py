@@ -1,7 +1,10 @@
 from app.core.config import settings
-from app.services.util import logger
 from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 def setup_vector_store(collection_name: str, embedding_function: HuggingFaceEmbeddings):
     """
