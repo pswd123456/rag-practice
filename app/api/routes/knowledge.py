@@ -3,9 +3,12 @@ from typing import Sequence
 from fastapi import APIRouter, Body, Depends, HTTPException, UploadFile, File
 from sqlmodel import Session
 
+from arq import create_pool
+from arq.connections import RedisSettings
+
 from app.api import deps
 from app.services.retrieval import VectorStoreManager
-
+from app.core.config import settings
 from app.domain.models import (Knowledge,
                                KnowledgeCreate,
                                KnowledgeRead,
@@ -71,7 +74,7 @@ def vector_store_stats(
 # ------------------- Document management ------------------
 
 @router.post("/{knowledge_id}/upload", response_model=int)
-def upload_file(
+async def upload_file(
         knowledge_id: int,
         file: UploadFile = File(...),
         db: Session = Depends(deps.get_db_session),
@@ -103,5 +106,18 @@ def upload_file(
     db.commit()
     db.refresh(doc)
 
+    # -- 推送任务到redis --
+
+    try:
+        redis = await create_pool(RedisSettings(host=settings.REDIS_HOST, port=settings.REDIS_PORT))
+        await redis.enqueue_job("process_document_task", doc.id)
+        await redis.close()
+    except Exception as e:
+        doc.status = DocStatus.FAILED
+        doc.error_message = f"推送任务到 Redis 失败: {str(e)}"
+        db.add(doc)
+        db.commit()
+        raise HTTPException(status_code=500, detail=f"推送任务到 Redis 失败: {str(e)}")
+    
     return doc.id
     

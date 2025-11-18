@@ -13,7 +13,7 @@ from typing import Any
 
 from app.services.retrieval import setup_vector_store
 
-from .loader import get_prepared_docs
+from app.services.loader import get_prepared_docs
 
 # 获取 'core.ingest' 模块的 logger
 logger = logging.getLogger(__name__)

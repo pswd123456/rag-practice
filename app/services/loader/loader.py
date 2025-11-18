@@ -1,8 +1,7 @@
 import logging
-
+from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFLoader, DirectoryLoader
-from langchain_core.documents import Document
 
 from pathlib import Path
 from typing import Iterable, List
@@ -89,3 +88,24 @@ def get_prepared_docs() -> List[Document]:
     raw_docs = load_raw_docs()
     normalized_docs = normalize_metadata(raw_docs)
     return split_docs(normalized_docs)
+
+def load_single_document(file_path: str) -> List[Document]:
+    """
+    从单个文件加载 PDF或者文件
+    暂时只支持 PDF
+    """
+    path_obj = Path(file_path)
+    if not path_obj.exists():
+        logger.error(f"文件不存在: {file_path}")
+        raise FileNotFoundError(f"文件不存在: {file_path}")
+    
+    logger.debug(f"正在从 {file_path} 加载文件...")
+
+    if path_obj.suffix == ".pdf":
+        loader = PyPDFLoader(str(path_obj))
+    else:
+        raise ValueError(f"不支持的文件类型: {path_obj.suffix}")
+    
+    return loader.load()
+
+
