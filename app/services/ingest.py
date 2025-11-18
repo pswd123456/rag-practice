@@ -10,7 +10,7 @@
 """
 import logging
 from app.services.loader import get_prepared_docs
-from app.services.vector_store.vector_store import setup_vector_store
+from app.services.retrieval.vector_store import setup_vector_store
 
 # 获取 'core.ingest' 模块的 logger
 logger = logging.getLogger(__name__)
