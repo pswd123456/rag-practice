@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
 
 from langchain_chroma import Chroma
 from langchain_core.retrievers import BaseRetriever
@@ -81,3 +81,24 @@ class VectorStoreManager:
             "metadata_fields": list(metadata_fields.keys()),
         }
 
+    def delete_vectors(self, ids: List[str]) -> bool:
+        """
+        根据 Chroma ID 列表从向量库中批量删除切片。
+        
+        :param ids: 要删除的 Chroma ID 列表
+        :return: 操作是否成功 (Chroma API 通常不返回具体结果，这里简化为 True)
+        """
+        if not ids:
+            logger.info("删除向量列表为空，跳过 Chroma 删除操作。")
+            return True
+        
+        logger.info("正在从 Chroma 集合 %s 删除 %s 个向量...", self.collection_name, len(ids))
+        try:
+            # self.vector_store 继承自 LangChain Chroma，底层是 Chroma 客户端
+            self.vector_store._collection.delete(ids=ids)
+            logger.info("Chroma 向量删除成功。")
+            return True
+        except Exception as e:
+            logger.error(f"从 Chroma 删除向量失败: {e}", exc_info=True)
+            # 在事务中，如果这一步失败，我们会向上抛出异常，让 Postgres 事务回滚
+            raise

@@ -18,7 +18,7 @@ from app.domain.models import (Knowledge,
 
 from app.services import knowledge_crud
 from app.services.file_storage import save_upload_file
-
+from app.services.document_crud import delete_document_and_vectors
 router = APIRouter()
 
 # ------------------ Knowledge base management ------------------
@@ -121,3 +121,20 @@ async def upload_file(
     
     return doc.id
     
+@router.delete("/documents/{doc_id}")
+def handle_delete_document(
+    doc_id: int,
+    db: Session = Depends(deps.get_db_session),
+):
+    """
+    删除指定文档及其在向量库中的所有切片。
+    """
+    try:
+        # 调用复杂的服务逻辑，它负责原子删除
+        return delete_document_and_vectors(db=db, doc_id=doc_id)
+    except HTTPException as e:
+        # 捕捉 404 错误
+        raise e
+    except Exception as e:
+        # 捕捉其他错误 (如 Chroma 连接失败)
+        raise HTTPException(status_code=500, detail=f"删除失败: {str(e)}")
