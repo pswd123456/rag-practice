@@ -4,7 +4,6 @@ from fastapi import HTTPException
 from typing import Sequence
 def create_knowledge(db: Session, knowledge_to_create: KnowledgeCreate) -> Knowledge:
     Knowledge_db = Knowledge.model_validate(knowledge_to_create)
-    
     db.add(Knowledge_db)
     db.commit()
     db.refresh(Knowledge_db)
