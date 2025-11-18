@@ -62,10 +62,10 @@ class VectorStoreManager:
         返回集合统计信息用于监控。
         """
         chroma_collection = self.vector_store._collection
-        document_count = chroma_collection.count()
+        chunk_count = chroma_collection.count()
         metadata_fields: Dict[str, Any] = {}
 
-        if document_count > 0:
+        if chunk_count > 0:
             snapshot = chroma_collection.get(include=["metadatas"])
             metadatas = snapshot.get("metadatas")
             if metadatas and len(metadatas) > 0:
@@ -76,8 +76,8 @@ class VectorStoreManager:
                     metadata_fields = dict(first_item)
 
         return {
-            "collection": self.collection_name,
-            "documents": document_count,
+            "collection_name": self.collection_name,
+            "chunk_count": chunk_count,
             "metadata_fields": list(metadata_fields.keys()),
         }
 
