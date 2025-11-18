@@ -1,0 +1,74 @@
+.
+├── README.md
+├── app
+│   ├── __init__.py
+│   ├── api
+│   │   ├── __init__.py
+│   │   ├── deps.py
+│   │   └── routes
+│   ├── core
+│   │   ├── __init__.py
+│   │   ├── config.py
+│   │   └── logging_setup.py
+│   ├── db
+│   │   ├── __init__.py
+│   │   └── session.py
+│   ├── domain
+│   │   ├── __init__.py
+│   │   ├── models
+│   │   └── schemas
+│   ├── main.py
+│   └── services
+│       ├── __init__.py
+│       ├── factories
+│       ├── generation
+│       ├── ingest
+│       ├── knowledge_crud.py
+│       ├── pipelines
+│       └── retrieval
+├── chromadb
+│   └── test
+│       ├── 3c98185c-71d6-45c6-b645-ebf0f1cb0336
+│       └── chroma.sqlite3
+├── data
+│   ├── deepseekv2.pdf
+│   ├── deepseekv2.pdf:Zone.Identifier
+│   ├── scores
+│   └── testset
+├── docs
+│   ├── experiments
+│   │   └── log.md
+│   ├── index.md
+│   └── reference
+│       ├── pipline.md
+│       └── util.md
+├── embed_models
+│   └── Qwen3-Embedding-0.6B
+│       ├── 1_Pooling
+│       ├── README.md
+│       ├── config.json
+│       ├── config_sentence_transformers.json
+│       ├── generation_config.json
+│       ├── merges.txt
+│       ├── model.safetensors
+│       ├── modules.json
+│       ├── tokenizer.json
+│       ├── tokenizer_config.json
+│       └── vocab.json
+├── environment.yml
+├── evaluation
+│   ├── __init__.py
+│   ├── config.py
+│   ├── runner.py
+│   └── testset.py
+├── logs
+│   └── project.log
+├── mkdocs.yml
+├── notebooks
+│   ├── __init__.py
+│   └── langchain_tutorial_chunk_embedmodel.ipynb
+├── scripts
+│   └── ingest.py
+└── structure.txt
+
+30 directories, 41 files

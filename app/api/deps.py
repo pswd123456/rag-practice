@@ -13,19 +13,17 @@ from app.services.retrieval import RetrievalService, VectorStoreManager
 
 # ---- Settings & DB ----
 
-
+#用于测试override settings, 正常来说config.py会生成一个唯一单例的settings对象
+# unused
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     return settings
-
-
-def get_db_session() -> Generator[Session, None, None]:
-    yield from get_session()
-
-
+# unused
 def get_settings_dependency() -> Settings:
     return get_settings()
-
+# unused
+def get_db_session() -> Generator[Session, None, None]:
+    yield from get_session()
 
 # ---- Model Factories ----
 
@@ -60,6 +58,7 @@ def _get_qa_service() -> QAService:
     return QAService(_get_llm())
 
 
+# unused
 def get_retrieval_service(
     manager: VectorStoreManager = Depends(get_vector_store_manager),
 ) -> RetrievalService:
