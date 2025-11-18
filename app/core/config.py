@@ -19,8 +19,12 @@ class Settings(BaseSettings):
     应用配置类
     Pydantic 会自动从 .env 文件和环境变量中读取这些值
     """
-
+    
     PROJECT_NAME: str
+    # --- 新增 Redis 配置 ---
+    REDIS_HOST: str = "localhost"
+    REDIS_PORT: int = 6379
+    
     # --- 1. 从 .env 读取的 "基础" 变量 ---
     # Pydantic 会自动进行类型转换和验证
     
@@ -69,6 +73,11 @@ class Settings(BaseSettings):
     @property
     def EVALUATION_CSV_PATH(self) -> Path:
         return self.SOURCH_FILE_DIR / "scores" / self.EVALUATION_FILE_NAME
+    
+    @computed_field
+    @property
+    def REDIS_URL(self) -> str:
+        return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}"
 
     # --- 4. 配置Pydantic-Settings ---
     model_config = SettingsConfigDict(
