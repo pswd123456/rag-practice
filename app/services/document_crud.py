@@ -4,7 +4,7 @@ from typing import List
 
 from app.domain.models import Document, Chunk
 from app.services.retrieval import VectorStoreManager
-from app.services.factories import setup_hf_embed_model
+from app.services.factories import setup_embed_model
 from app.core.config import settings
 
 def delete_document_and_vectors(db: Session, doc_id: int):
@@ -26,7 +26,7 @@ def delete_document_and_vectors(db: Session, doc_id: int):
     
     # 3. 初始化 VectorStoreManager 并执行删除
     # 注意：这里需要重新初始化模型和管理器，因为它是同步 CRUD 操作
-    embed_model = setup_hf_embed_model("Qwen3-Embedding-0.6B")
+    embed_model = setup_embed_model("text-embedding-v4")
     manager = VectorStoreManager(settings.CHROMADB_COLLECTION_NAME, embed_model, settings.TOP_K)
     
     # 调用增强后的 delete_vectors 方法

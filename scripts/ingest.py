@@ -5,8 +5,9 @@ import typer
 
 from app.core.config import settings
 from app.core.logging_setup import get_logging_config
-from app.services.factories import setup_hf_embed_model
-from app.services.ingest import build_or_get_vector_store, get_prepared_docs
+from app.services.factories import setup_embed_model
+from app.services.ingest import build_or_get_vector_store
+from app.services.loader import get_prepared_docs
 from app.services.retrieval import VectorStoreManager
 
 app = typer.Typer(help="RAG 数据摄取 / 向量库管理 CLI")
@@ -38,7 +39,7 @@ def build(force: bool = typer.Option(False, "--force", help="是否强制重建�
     执行全量向量化摄取。
     """
     configure_logging(log_level)
-    embed_model = setup_hf_embed_model("Qwen3-Embedding-0.6B")
+    embed_model = setup_embed_model("text-embedding-v4")
     vector_store = build_or_get_vector_store(
         settings.CHROMADB_COLLECTION_NAME,
         embed_model=embed_model,
@@ -53,7 +54,7 @@ def stats(log_level: str = "INFO"):
     查看集合统计信息。
     """
     configure_logging(log_level)
-    embed_model = setup_hf_embed_model("Qwen3-Embedding-0.6B")
+    embed_model = setup_embed_model("text-embedding-v4")
     manager = VectorStoreManager(settings.CHROMADB_COLLECTION_NAME, embed_model, settings.TOP_K)
     manager.ensure_collection()
     typer.echo(manager.stats())

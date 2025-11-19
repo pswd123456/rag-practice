@@ -6,8 +6,8 @@ from ragas.llms import LangchainLLMWrapper
 from ragas.testset import TestsetGenerator
 
 from app.core.config import settings
-from app.services.factories import setup_hf_embed_model, setup_qwen_llm
-from app.services.ingest import get_prepared_docs
+from app.services.factories import setup_embed_model, setup_qwen_llm
+from app.services.loader import get_prepared_docs
 from evaluation.config import get_default_config
 
 def generate_testset():
@@ -16,7 +16,7 @@ def generate_testset():
 
     config = get_default_config()
     docs = get_prepared_docs()
-    embed_model = LangchainEmbeddingsWrapper(setup_hf_embed_model("Qwen3-Embedding-0.6B"))
+    embed_model = LangchainEmbeddingsWrapper(setup_embed_model("text-embedding-v4"))
     llm = LangchainLLMWrapper(setup_qwen_llm("qwen-flash"))
 
     # 生成测试集

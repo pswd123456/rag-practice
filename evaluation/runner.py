@@ -25,7 +25,7 @@ from ragas.metrics import (
 # --- 项目内部导入 ---
 from app.core.config import settings
 from app.core.logging_setup import get_logging_config
-from app.services.factories import setup_hf_embed_model, setup_qwen_llm
+from app.services.factories import setup_embed_model, setup_qwen_llm
 from app.services.generation import QAService
 from app.services.ingest import build_or_get_vector_store
 from app.services.pipelines import RAGPipeline
@@ -233,8 +233,8 @@ class RAGEvaluator:
 def prepare_pipeline(force_rebuild: bool = False):
     collection_name = settings.CHROMADB_COLLECTION_NAME
 
-    embeddings_name = "Qwen3-Embedding-0.6B"
-    embeddings = setup_hf_embed_model(embeddings_name)
+    embeddings_name = "text-embedding-v4"
+    embeddings = setup_embed_model(embeddings_name)
     logger.info(" Embedding 模型已就绪: %s", embeddings_name)
 
     vector_store = build_or_get_vector_store(collection_name, embeddings, force_rebuild=force_rebuild)

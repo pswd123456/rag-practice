@@ -16,7 +16,7 @@ from app.core.logging_setup import get_logging_config
 from app.db.session import engine
 from app.domain.models import Document, DocStatus, Chunk
 from app.services.loader import load_single_document, split_docs, normalize_metadata
-from app.services.factories import setup_hf_embed_model
+from app.services.factories import setup_embed_model
 from app.services.retrieval import setup_vector_store
 
 minio_client = Minio(
@@ -96,7 +96,7 @@ def _sync_process_document(doc_id: int):
             logger.info(f"文档 {doc.id} 切分完成，共 {len(splitted_docs)} 条")
 
             # 获取/初始化向量库
-            embed_model = setup_hf_embed_model("Qwen3-Embedding-0.6B")
+            embed_model = setup_embed_model("text-embedding-v4")
             vector_store = setup_vector_store(
                 settings.CHROMADB_COLLECTION_NAME,
                 embed_model

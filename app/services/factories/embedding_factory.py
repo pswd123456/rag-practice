@@ -1,36 +1,28 @@
+from langchain_community.embeddings import DashScopeEmbeddings
 from app.core.config import settings
-from langchain_huggingface import HuggingFaceEmbeddings
-import os
 import logging
 
 logger = logging.getLogger(__name__)
 
-
-def setup_hf_embed_model(embed_model_name: str):
+def setup_embed_model(embed_model_name: str):
     """
-    配置并返回 Embedding 模型实例。
+    配置并返回 Embedding 模型实例 (DashScope)。
 
-    :return: HuggingFaceEmbeddings 实例
+    :param model_name: DashScope 的模型名称，例如 "text-embedding-v2"
+    :return: DashScopeEmbeddings 实例
     """
-    logger.info("正在设置 Embedding 模型...")
 
-    embed_model_path = settings.EMBED_MODEL_DIR / embed_model_name
+    logger.info(f"正在设置 Embedding 模型 (DashScope: {embed_model_name})...")
 
-    if not embed_model_path.exists():
-        logger.error(f"本地模型文件不存在: {embed_model_path}")
-        raise ValueError(f"本地模型不存在: {embed_model_path}")
+    if not settings.DASHSCOPE_API_KEY:
+        raise ValueError("未找到 DASHSCOPE_API_KEY，请检查环境变量或 .env 配置")
 
-    logger.info(f"正在使用本地模型: {embed_model_name}")
-
-    # 自动检测使用 'cuda' (如果可用) 或 'cpu'
-    model_kwargs = {'device': 'cuda' if 'cuda' in os.getenv('DEVICE', 'cuda') else 'cpu'}
-
-    logger.debug(f"Embedding 模型: {embed_model_name}")
-
-    embeddings = HuggingFaceEmbeddings(
-        # 使用本地路径的模型
-        model_name=str(embed_model_path),
-        model_kwargs=model_kwargs
+    # 使用 DashScope
+    embeddings = DashScopeEmbeddings(
+        model=embed_model_name,
+        dashscope_api_key=settings.DASHSCOPE_API_KEY
     )
-    logger.info("Embedding 模型设置完成。")
+    
+    logger.info("Embedding 模型设置完成。")   
+
     return embeddings
