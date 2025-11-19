@@ -2,7 +2,7 @@ import logging
 from typing import Sequence
 
 from fastapi import APIRouter, Body, Depends, HTTPException, UploadFile, File
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from arq import create_pool
 from arq.connections import RedisSettings
@@ -55,6 +55,40 @@ def handle_update_knowledge(
 ):
     return knowledge_crud.update_knowledge(db=db, knowledge_id=knowledge_id, knowledge_to_update=knowledge_in)
 
+@router.delete("/knowledges/{knowledge_id}")
+def handle_delete_knowledge(
+    knowledge_id: int,
+    db: Session = Depends(deps.get_db_session),
+):
+    """
+    删除知识库，并级联删除其下所有文档和向量。
+    """
+    # 1. 查出知识库
+    knowledge = db.get(Knowledge, knowledge_id)
+    if not knowledge:
+        raise HTTPException(status_code=404, detail="知识库不存在")
+
+    # 2. 查出该知识库下的所有文档
+    # 注意：这里不能直接 iterate knowledge.documents，为了稳妥建议重新查一次
+    statement = select(Document).where(Document.knowledge_base_id == knowledge_id)
+    documents = db.exec(statement).all()
+
+    # 3. 逐个删除文档（复用已有的删除逻辑，它会处理 MinIO、Chroma 和 DB）
+    # 这是一个比较“重”的操作，生产环境建议丢给 Worker 异步做，但这里为了简单先同步做
+    deleted_docs_count = 0
+    for doc in documents:
+        try:
+            delete_document_and_vectors(db, doc.id) #type:ignore
+            deleted_docs_count += 1
+        except Exception as e:
+            # 遇到个别失败打印日志，继续删其他的
+            print(f"删除文档 {doc.id} 失败: {e}")
+
+    # 4. 最后删除知识库本身
+    db.delete(knowledge)
+    db.commit()
+
+    return {"message": f"已删除知识库 {knowledge.name} 及其包含的 {deleted_docs_count} 个文档"}
 # ------------------- Vector Store ------------------
 @router.post("/vector-store/reload")
 def reload_vector_store(
