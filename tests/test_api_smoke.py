@@ -1,37 +1,9 @@
 import pytest
-import pytest_asyncio
 import uuid
 
 # 辅助函数
 def get_random_suffix():
     return uuid.uuid4().hex[:8]
-
-# 🌟 核心：定义一个临时知识库 Fixture
-# 只要测试函数参数里写了 'temp_kb'，Pytest 就会自动执行这里的逻辑
-@pytest_asyncio.fixture(scope="function")
-async def temp_kb(client):
-    # --- Setup (前置操作) ---
-    # 1. 创建一个随机名字的知识库
-    random_name = f"test_kb_{get_random_suffix()}"
-    payload = {"name": random_name, "description": "Auto-created by pytest"}
-    
-    response = await client.post("/knowledge/knowledges", json=payload)
-    assert response.status_code == 200
-    kb_data = response.json()
-    kb_id = kb_data["id"]
-    
-    print(f"\n[Setup] 创建临时知识库 ID: {kb_id}")
-
-    # --- Yield (把 ID 给测试用例) ---
-    yield kb_id
-
-    # --- Teardown (后置清理) ---
-    # 测试结束后，无论成功失败，这行代码都会执行
-    print(f"\n[Teardown] 正在清理知识库 ID: {kb_id} ...")
-    del_res = await client.delete(f"/knowledge/knowledges/{kb_id}")
-    assert del_res.status_code == 200
-    print(f"[Teardown] 清理完成。")
-
 
 # 1. 测试创建流程 (这个测试本身就是验证创建，所以我们手动清理，或者保留上面的写法)
 # 为了演示清理，我们只保留最核心的上传测试
