@@ -1,0 +1,147 @@
+
+services:
+  # ----------------------------------------------------------------
+  # 1. 基础设施服务 (Database & Storage)
+  # ----------------------------------------------------------------
+  
+  # Postgres 数据库
+  db:
+    image: postgres:15
+    restart: always
+    environment:
+      # 这里的账号密码必须和你 .env 里的 DATABASE_URL 对应
+      POSTGRES_USER: myuser
+      POSTGRES_PASSWORD: mypassword
+      POSTGRES_DB: rag_db
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    networks:
+      - rag-net
+    ports:
+      - "5432:5432" # 暴露给宿主机，方便你用 Navicat/DBeaver 连接
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U myuser -d rag_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Redis 缓存/队列
+  redis:
+    image: redis:latest
+    restart: always
+    networks:
+      - rag-net
+    ports:
+      - "6379:6379"
+
+  # MinIO 对象存储
+  minio:
+    image: minio/minio
+    restart: always
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000" # API 端口
+      - "9001:9001" # 控制台端口
+    volumes:
+      - minio_data:/data
+    networks:
+      - rag-net
+
+  # Chroma 向量数据库 (Server Mode)
+  chroma:
+    image: chromadb/chroma:latest
+    restart: always
+    volumes:
+      - chroma_data:/chroma/chroma
+    networks:
+      - rag-net
+    ports:
+      - "8001:8000" # <--- 关键修改：映射到宿主机 8001，避开 FastAPI 的 8000
+    environment:
+      - IS_PERSISTENT=TRUE
+
+  # ----------------------------------------------------------------
+  # 2. 应用服务 (API & Worker)
+  # ----------------------------------------------------------------
+
+  # FastAPI 后端
+  api:
+    build: .
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000" # 宿主机访问入口
+    env_file:
+      - .env # 加载 .env 文件中的 API KEY
+    environment:
+      # --- 覆盖 .env 中的 localhost 配置 ---
+      # 容器内互访必须用服务名 (db, redis, minio, chroma)
+      - DATABASE_URL=postgresql+psycopg2://myuser:mypassword@db:5432/rag_db
+      - REDIS_HOST=redis
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+      - MINIO_BUCKET_NAME=rag-knowledge-base
+      # 指向 Chroma 容器内部端口 (8000)
+      - CHROMA_SERVER_HOST=chroma
+      - CHROMA_SERVER_PORT=8000
+      # 透传 API Key (如果 .env 里有，这里会自动读取，不需要硬编码)
+      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      # 其他配置保持默认或从 .env 读取
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      chroma:
+        condition: service_started
+    networks:
+      - rag-net
+    volumes:
+      # - ./embed_models:/app/embed_models # 挂载模型权重
+      - ./logs:/app/logs                 # 挂载日志
+      # 👇 新增这一行：把当前目录挂载到容器的 /app
+      # 这样你改本地代码，容器里立即生效（重启容器即可，不用 Build）
+      - ./:/app
+  # 异步任务 Worker
+  worker:
+    build: .
+    command: arq app.worker.WorkerSettings
+    env_file:
+      - .env
+    environment:
+      # 同 API 配置
+      - DATABASE_URL=postgresql+psycopg2://myuser:mypassword@db:5432/rag_db
+      - REDIS_HOST=redis
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+      - MINIO_BUCKET_NAME=rag-knowledge-base
+      - CHROMA_SERVER_HOST=chroma
+      - CHROMA_SERVER_PORT=8000
+      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      chroma:
+        condition: service_started
+    networks:
+      - rag-net
+    volumes:
+      # - ./embed_models:/app/embed_models
+      - ./logs:/app/logs
+
+volumes:
+  pg_data:
+  minio_data:
+  chroma_data:
+
+networks:
+  rag-net:
+    driver: bridge
