@@ -4,15 +4,18 @@ from dotenv import find_dotenv
 from pydantic import computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# 根目录计算
+# 项目根目录
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+# 尝试加载 .env 文件 (如果有的话)，没有也不报错，依靠环境变量
 ENV_PATH = find_dotenv()
 if not ENV_PATH:
-    print("错误：未找到 .env 文件。请在项目根目录创建。", file=sys.stderr)
-    sys.exit(1)
-
-# 项目根目录
-PROJECT_ROOT = Path(ENV_PATH).parent
-
+    # 在 Docker 生产环境中，可能没有 .env 文件，而是直接通过环境变量注入
+    # 所以这里改为 Warning 或直接 pass，不再 sys.exit(1)
+    print(f"警告：未找到 .env 文件，将仅依赖环境变量。当前根目录: {PROJECT_ROOT}", file=sys.stderr)
+else:
+    # 如果找到了 .env，再次确认一下它是不是在根目录下 (可选)
+    pass
 
 class Settings(BaseSettings):
     """
@@ -39,7 +42,11 @@ class Settings(BaseSettings):
     DASHSCOPE_API_KEY: str
     QWEN_BASE_URL: str
     VECTOR_DB_NAME: str
+
     CHROMADB_COLLECTION_NAME: str
+    CHROMA_SERVER_HOST: str = "" 
+    CHROMA_SERVER_PORT: int = 8000
+
     TOP_K: int
 
     CHUNK_SIZE: int
@@ -55,7 +62,7 @@ class Settings(BaseSettings):
     #    这些可以直接使用 PROJECT_ROOT，它们是固定的
     LOG_DIR: Path = PROJECT_ROOT / "logs"
     SOURCH_FILE_DIR: Path = PROJECT_ROOT / "data"
-    EMBED_MODEL_DIR: Path = PROJECT_ROOT / "embed_models"
+    # EMBED_MODEL_DIR: Path = PROJECT_ROOT / "embed_models"
 
     # --- 3. "派生" 的配置 (使用 @computed_field) ---
     #    这些字段的值依赖于上面从 .env 加载的字段
