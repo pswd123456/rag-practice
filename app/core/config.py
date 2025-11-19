@@ -21,7 +21,15 @@ class Settings(BaseSettings):
     """
     
     PROJECT_NAME: str
-    # --- 新增 Redis 配置 ---
+
+    # --- MinIO 配置 ---
+    MINIO_ENDPOINT: str = "localhost:9000" # Docker Desktop 映射到 localhost
+    MINIO_ACCESS_KEY: str = "minioadmin"
+    MINIO_SECRET_KEY: str = "minioadmin"
+    MINIO_BUCKET_NAME: str = "rag-knowledge-base"
+    MINIO_SECURE: bool = False # 本地开发通常用 HTTP (False)
+
+    # --- Redis 配置 ---
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
     
