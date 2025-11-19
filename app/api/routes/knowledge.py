@@ -105,9 +105,7 @@ async def upload_file(
     db.add(doc)
     db.commit()
     db.refresh(doc)
-
-    # -- 推送任务到redis --
-
+    #推送任务到redis
     try:
         redis = await create_pool(RedisSettings(host=settings.REDIS_HOST, port=settings.REDIS_PORT))
         await redis.enqueue_job("process_document_task", doc.id)

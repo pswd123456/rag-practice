@@ -48,6 +48,7 @@ def _sync_process_document(doc_id: int):
             raw_docs = load_single_document(doc.file_path)
 
             normalized_docs = normalize_metadata(raw_docs)
+            # 这一步会强制将source(项目存放路径, 设置在config)设置为文件名, 并且注入doc_id
             logger.debug(f"原始文档标准化完成: {len(normalized_docs)} 条")
 
             for d in normalized_docs:
@@ -69,7 +70,7 @@ def _sync_process_document(doc_id: int):
                 embed_model
             )
 
-            # 添加到Chroma, 获取返回的IDs
+            # 入库, 添加到Chroma, 获取返回的IDs
             chroma_ids = vector_store.add_documents(splitted_docs)
             logger.info(f"文档 {doc.id} 添加到向量库完成，共 {len(chroma_ids)} 条")
 
@@ -111,8 +112,13 @@ async def process_document_task(ctx: Any, doc_id: int):
 # --- Arq 配置 ---
 
 class WorkerSettings:
+    # 注册可以被执行的任务函数列表
     functions = [process_document_task]
+
+    # 配置 Redis 连接
     redis_settings = RedisSettings(host=settings.REDIS_HOST, port=settings.REDIS_PORT)
+    
+    # 启动和关闭时的钩子（当前仅打印日志）
     on_startup = startup
     on_shutdown = shutdown
 

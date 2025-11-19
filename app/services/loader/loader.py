@@ -9,6 +9,7 @@ from typing import Iterable, List
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
 def create_document_loader():
 
     logger.debug
