@@ -6,7 +6,7 @@ from sqlmodel import Session
 
 from app.core.config import Settings, settings
 from app.db.session import get_session
-from app.services.factories import setup_hf_embed_model, setup_qwen_llm
+from app.services.factories import setup_embed_model, setup_qwen_llm
 from app.services.generation import QAService
 from app.services.pipelines import RAGPipeline
 from app.services.retrieval import RetrievalService, VectorStoreManager
@@ -30,7 +30,7 @@ def get_db_session() -> Generator[Session, None, None]:
 
 @lru_cache(maxsize=1)
 def _get_embed_model():
-    return setup_hf_embed_model("Qwen3-Embedding-0.6B")
+    return setup_embed_model("text-embedding-v4")
 
 
 @lru_cache(maxsize=1)
