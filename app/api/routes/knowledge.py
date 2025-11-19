@@ -2,7 +2,7 @@ import logging
 from typing import Sequence
 
 from fastapi import APIRouter, Body, Depends, HTTPException, UploadFile, File
-from sqlmodel import Session, select
+from sqlmodel import Session, select, desc
 
 from arq import create_pool
 from arq.connections import RedisSettings
@@ -89,6 +89,26 @@ def handle_delete_knowledge(
     db.commit()
 
     return {"message": f"已删除知识库 {knowledge.name} 及其包含的 {deleted_docs_count} 个文档"}
+# 获取指定知识库下的所有文档
+@router.get("/knowledges/{knowledge_id}/documents", response_model=Sequence[Document])
+def handle_get_knowledge_documents(
+    knowledge_id: int,
+    db: Session = Depends(deps.get_db_session),
+):
+    # 检查知识库是否存在
+    knowledge = db.get(Knowledge, knowledge_id)
+    if not knowledge:
+        raise HTTPException(status_code=404, detail="知识库不存在")
+    
+    # 查询文档
+    # statement = select(Document).where(Document.knowledge_base_id == knowledge_id).order_by(Document.created_at.desc())
+    statement = (
+        select(Document)
+        .where(Document.knowledge_base_id == knowledge_id)
+        .order_by(desc(Document.created_at)) # 👈 使用 desc() 函数包裹
+    )
+    return db.exec(statement).all()
+
 # ------------------- Vector Store ------------------
 @router.post("/vector-store/reload")
 def reload_vector_store(
@@ -172,3 +192,14 @@ def handle_delete_document(
     except Exception as e:
         # 捕捉其他错误 (如 Chroma 连接失败)
         raise HTTPException(status_code=500, detail=f"删除失败: {str(e)}")
+
+#查询单个文档详情 (用于前端轮询状态)
+@router.get("/documents/{doc_id}", response_model=Document)
+def handle_get_document(
+    doc_id: int,
+    db: Session = Depends(deps.get_db_session),
+):
+    doc = db.get(Document, doc_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="文档不存在")
+    return doc

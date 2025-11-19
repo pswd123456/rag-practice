@@ -104,8 +104,9 @@ def load_single_document(file_path: str) -> List[Document]:
 
     if path_obj.suffix == ".pdf":
         loader = PyPDFLoader(str(path_obj))
-    elif path_obj.suffix == ".txt":
-        loader = TextLoader(str(path_obj))
+    # md 将视为普通文本处理
+    elif path_obj.suffix.lower() in [".txt", ".md"]:
+        loader = TextLoader(str(path_obj), encoding="utf-8")
     else:
         raise ValueError(f"不支持的文件类型: {path_obj.suffix}")
     
