@@ -5,7 +5,8 @@ from typing import List, Optional
 class QueryRequest(BaseModel):
     """API 请求体模型"""
     query: str
-
+    knowledge_id: Optional[int] = None
+    strategy: str = "default"
 
 class Source(BaseModel):
     """文档来源模型，用于前端展示"""

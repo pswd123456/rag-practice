@@ -88,6 +88,7 @@ def _sync_process_document(doc_id: int):
                 d.metadata["source"] = doc.filename 
                 # 注入数据库 ID，用于未来数据一致性检查
                 d.metadata["doc_id"] = doc.id
+                d.metadata["knowledge_id"] = doc.knowledge_base_id
 
             if not doc.id:
                 raise ValueError("文档ID不存在")

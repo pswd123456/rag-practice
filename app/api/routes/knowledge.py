@@ -1,3 +1,4 @@
+import logging
 from typing import Sequence
 
 from fastapi import APIRouter, Body, Depends, HTTPException, UploadFile, File
@@ -19,6 +20,7 @@ from app.domain.models import (Knowledge,
 from app.services import knowledge_crud
 from app.services.file_storage import save_upload_file
 from app.services.document_crud import delete_document_and_vectors
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # ------------------ Knowledge base management ------------------
