@@ -1,7 +1,7 @@
 import logging
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_community.document_loaders import PyPDFLoader, DirectoryLoader
+from langchain_community.document_loaders import PyPDFLoader, DirectoryLoader, TextLoader
 
 from pathlib import Path
 from typing import Iterable, List
@@ -104,6 +104,8 @@ def load_single_document(file_path: str) -> List[Document]:
 
     if path_obj.suffix == ".pdf":
         loader = PyPDFLoader(str(path_obj))
+    elif path_obj.suffix == ".txt":
+        loader = TextLoader(str(path_obj))
     else:
         raise ValueError(f"不支持的文件类型: {path_obj.suffix}")
     

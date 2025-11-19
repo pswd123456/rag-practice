@@ -41,7 +41,7 @@ def build_or_get_vector_store(collection_name: str, embed_model: Any, force_rebu
         item_count = 0
 
     if item_count > 0:
-        logger.info("向量数据库 '%s' 已存在, 跳过构建。", collection_name, item_count)
+        logger.info("向量数据库 '%s' 已存在, 跳过构建。", collection_name)
         return vector_store
 
     logger.info("向量数据库 '%s' 不存在，开始构建...", collection_name)

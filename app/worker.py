@@ -2,7 +2,7 @@ import asyncio
 import logging
 import logging.config
 from typing import Any
-
+from pathlib import Path
 import tempfile
 import os
 from minio import Minio
@@ -64,8 +64,10 @@ def _sync_process_document(doc_id: int):
             # 1. 从 MinIO 下载文件到临时目录
             file_object_name = doc.file_path # 数据库里存的是 MinIO Key
 
+            original_suffix = Path(doc.filename).suffix
+
             # 创建一个临时文件，不自动删除 (delete=False)，因为我们要把路径传给 loader
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=original_suffix) as tmp_file:
                 logger.info(f"正在从 MinIO 下载: {file_object_name}")
                 minio_client.fget_object(
                     bucket_name=settings.MINIO_BUCKET_NAME,

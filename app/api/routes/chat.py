@@ -35,7 +35,7 @@ async def handle_query(
     # 2. 根据 strategy 调整检索策略 (A/B 测试逻辑)
     if request.strategy == "dense_only":
         # 策略 A: 纯向量检索 (默认)
-        logger.info(">>> 正在执行: 纯向量检索策略") # 👈 埋点 A
+        logger.info(">>> 正在执行: 纯向量检索策略") #埋点 A
         retriever = store_manager.vector_store.as_retriever(search_kwargs=search_kwargs)
         
     elif request.strategy == "hybrid":
