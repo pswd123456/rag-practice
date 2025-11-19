@@ -35,7 +35,7 @@ def get_logging_config(log_file_path: str) -> Dict[str, Any]:
             # 处理器 B: 文件 (FileHandler)
             # 对应 main.py
             'file_handler': {
-                'class': 'logging.FileHandler',
+                'class': 'logging.handlers.RotatingFileHandler',
                 'level': 'DEBUG', # 文件级别
                 'formatter': 'file_formatter', # 使用上面定义的格式化器
                 'filename': log_file_path, # !! 使用传入的动态路径 !!
@@ -53,7 +53,11 @@ def get_logging_config(log_file_path: str) -> Dict[str, Any]:
 
         # 4. 配置其他 logger
         'loggers': {
-
+            'app': {
+                'level': 'INFO', # 或者 'DEBUG'，这样 info/debug 才能显示出来！
+                'handlers': ['console_rich', 'file_handler'],
+                'propagate': False 
+            },
             'evaluation':{
                 'level': 'DEBUG',
                 'handlers': ['console_rich', 'file_handler'],
