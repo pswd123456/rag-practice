@@ -5,13 +5,14 @@ RAG 管道模块 (pipeline.py)
 负责定义和创建 RAG (Retrieval-Augmented Generation) 链。
 """
 import logging
-from typing import List
+from typing import List, Optional
 
 from langchain_core.documents import Document
 from langchain_core.runnables import RunnablePassthrough, RunnableLambda
 
 from app.services.generation.qa_service import QAService
 from app.services.retrieval.service import RetrievalService
+from app.services.retrieval.vector_store_manager import VectorStoreManager
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,41 @@ class RAGPipeline:
         )
 
         logger.info("RAG 管道已成功创建。")
+
+    @classmethod
+    def build(
+        cls,
+        store_manager:VectorStoreManager,
+        qa_service: QAService,
+        knowledge_id: Optional[int] = None,
+        top_k: int = 3,
+        strategy: str = "default"
+    ) -> "RAGPipeline":
+        """
+        工厂方法：根据参数动态组装 RAGPipeline
+        """
+        search_kwargs = {"k": top_k}
+        if knowledge_id:
+            search_kwargs["filter"] = {"knowledge_id": knowledge_id}#type:ignore
+
+        if strategy == "dense_only":
+            retriever = store_manager.vector_store.as_retriever(search_kwargs=search_kwargs)
+                    
+        elif strategy == "hybrid":
+            # TODO: 实现混合检索逻辑
+            # retriever = ...
+            retriever = store_manager.vector_store.as_retriever(search_kwargs=search_kwargs)
+            
+        elif strategy == "rerank":
+            # TODO: 实现重排序逻辑
+            # retriever = ...
+            retriever = store_manager.vector_store.as_retriever(search_kwargs=search_kwargs)
+            
+        else:
+            # default
+            retriever = store_manager.vector_store.as_retriever(search_kwargs=search_kwargs)
+
+        return cls(RetrievalService(retriever), qa_service)
 
     def _format_docs(self, docs: List[Document]) -> str:
         logger.debug("正在格式化 %s 个检索到的文档...", len(docs))

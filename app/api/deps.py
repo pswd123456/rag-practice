@@ -1,5 +1,5 @@
 from functools import lru_cache
-from typing import Generator
+from typing import Generator, Optional
 
 from fastapi import Depends
 from sqlmodel import Session
@@ -65,20 +65,27 @@ def get_retrieval_service(
     retriever = manager.as_retriever()
     return RetrievalService(retriever)
 
-
-@lru_cache(maxsize=1)
-def _get_rag_pipeline() -> RAGPipeline:
-    manager = _get_vector_store_manager()
-    retriever_service = RetrievalService(manager.as_retriever())
-    qa_service = _get_qa_service()
-    return RAGPipeline(retriever_service, qa_service)
-
-
-def get_rag_pipeline() -> RAGPipeline:
-    return _get_rag_pipeline()
-
-
-def reset_rag_pipeline():
-    _get_rag_pipeline.cache_clear()
+def get_rag_pipeline_factory(
+    manager: VectorStoreManager = Depends(get_vector_store_manager),
+    qa_service: QAService = Depends(_get_qa_service)
+):
+    """
+    返回一个闭包/函数，前端路由调用这个函数来创建 Pipeline。
+    deps 只负责把 manager 和 qa_service 这两个原料递进去。
+    """
+    def create_pipeline(knowledge_id: Optional[int], 
+                        top_k: int = settings.TOP_K,
+                        strategy: str = "default"
+                        ):
+        # ✅ 逻辑下沉到了 domain 层，deps 这里只是简单的透传调用
+        return RAGPipeline.build(
+            store_manager=manager,
+            qa_service=qa_service,
+            knowledge_id=knowledge_id,
+            top_k=top_k,
+            strategy=strategy
+        )
+        
+    return create_pipeline
 
 
