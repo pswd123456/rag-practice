@@ -87,12 +87,20 @@ with st.sidebar:
         st.info("暂无知识库，请先创建")
         selected_kb = None
     else:
-        # 使用 radio button 作为导航
-        kb_names = [k["name"] for k in kb_list]
-        selected_kb_name = st.radio("选择知识库", kb_names)
-        # 找到对应的完整对象
-        selected_kb = next((k for k in kb_list if k["name"] == selected_kb_name), None)
+        # --- 修改开始 ---
+        # 构造显示名称，如果正在删除，加上醒目标记
+        kb_options = {}
+        for k in kb_list:
+            display_name = k["name"]
+            # 后端返回的 dict 里现在会有 "status" 字段
+            if k.get("status") == "DELETING":
+                display_name = f"🔴 {display_name} (删除中...)"
+            
+            kb_options[display_name] = k
 
+        # 使用处理过的 key 作为选项
+        selected_option = st.radio("选择知识库", list(kb_options.keys()))
+        selected_kb = kb_options[selected_option]
 
 # ================== 主界面：Tab 页签管理 ==================
 
@@ -151,7 +159,13 @@ if selected_kb:
                                     for idx, src in enumerate(data['sources']):
                                         st.markdown(f"**[{idx+1}] {src['source_filename']}**")
                                         st.caption(src['chunk_content'])
-                            st.session_state.messages.append(data) # 简化存储
+                            
+                            # [FIX] 手动构造符合前端要求的字典
+                            st.session_state.messages.append({
+                                "role": "assistant",        # 补充 role
+                                "content": data["answer"],  # 将 answer 映射为 content
+                                "sources": data["sources"]  # 保留 sources
+                            })
                         else:
                             st.error(res.text)
                     except Exception as e:
