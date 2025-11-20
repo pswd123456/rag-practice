@@ -1,5 +1,6 @@
 from typing import Optional, List, TYPE_CHECKING
 from sqlmodel import SQLModel, Field, Relationship
+from enum import Enum
 
 if TYPE_CHECKING:
     from .document import Document

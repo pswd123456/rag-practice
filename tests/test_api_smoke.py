@@ -1,27 +1,45 @@
 import pytest
 import uuid
-
+import asyncio
 # 辅助函数
 def get_random_suffix():
     return uuid.uuid4().hex[:8]
 
-# 1. 测试创建流程 (这个测试本身就是验证创建，所以我们手动清理，或者保留上面的写法)
-# 为了演示清理，我们只保留最核心的上传测试
 @pytest.mark.asyncio
 async def test_create_and_delete_logic(client):
-    """验证我们刚才写的创建和删除接口本身是好使的"""
-    # 创建
+    """验证异步删除流程：创建 -> 触发删除 -> 轮询等待直至消失"""
+    # 1. 创建
     name = f"manual_del_{get_random_suffix()}"
     res = await client.post("/knowledge/knowledges", json={"name": name})
+    assert res.status_code == 200
     kb_id = res.json()["id"]
     
-    # 删除
+    # 2. 删除 (触发异步任务)
     del_res = await client.delete(f"/knowledge/knowledges/{kb_id}")
-    assert del_res.status_code == 200
+    # 注意：如果你在 router 里设置了 status_code=202，这里应改为 202；如果是默认 200 则保持 200
+    assert del_res.status_code in [200, 202]
     
-    # 再次查询应该 404
-    get_res = await client.get(f"/knowledge/knowledges/{kb_id}")
-    assert get_res.status_code == 404
+    # 3. 轮询检查 (Polling)
+    # 给 Worker 一点时间来处理删除任务 (比如最多等 5 秒)
+    max_retries = 10
+    wait_seconds = 0.5
+    
+    is_deleted = False
+    for _ in range(max_retries):
+        # 尝试查询
+        get_res = await client.get(f"/knowledge/knowledges/{kb_id}")
+        
+        if get_res.status_code == 404:
+            # 成功：已经查不到了，说明删除完成
+            is_deleted = True
+            break
+        
+        # 失败：还在，等一会儿再查
+        await asyncio.sleep(wait_seconds)
+    
+    # 4. 最终断言
+    if not is_deleted:
+        pytest.fail(f"超时：知识库 {kb_id} 在 {max_retries * wait_seconds} 秒内未被删除。Worker 正常运行吗？")
 
 
 # 2. 测试上传流程 (使用 temp_kb 自动管理生命周期)
