@@ -19,7 +19,13 @@ from app.services.loader import get_prepared_docs
 logger = logging.getLogger(__name__)
 
 
-def build_or_get_vector_store(collection_name: str, embed_model: Any, force_rebuild: bool = False):
+def build_or_get_vector_store(
+        collection_name: str, 
+        embed_model: Any, 
+        force_rebuild: bool = False,
+        auto_ingest: bool = False
+
+        ):
     """
     构建（或加载）向量数据库，并将文档加载、分割、嵌入后存入。
 
@@ -44,16 +50,20 @@ def build_or_get_vector_store(collection_name: str, embed_model: Any, force_rebu
         logger.info("向量数据库 '%s' 已存在, 跳过构建。", collection_name)
         return vector_store
 
-    logger.info("向量数据库 '%s' 不存在，开始构建...", collection_name)
-    docs = get_prepared_docs()
+    if auto_ingest:
+        
+        logger.info("向量数据库 '%s' 不存在，开始构建...", collection_name)
+        docs = get_prepared_docs()
 
-    logger.info("正在将 %s 个文档块添加到 '%s' 集合中...", len(docs), collection_name)
-    try:
-        vector_store.add_documents(docs)
-        logger.info("文档添加成功。")
-    except Exception as e:
-        logger.error("向向量数据库添加文档时出错: %s", e, exc_info=True)
-        raise
+        logger.info("正在将 %s 个文档块添加到 '%s' 集合中...", len(docs), collection_name)
+        try:
+            vector_store.add_documents(docs)
+            logger.info("文档添加成功。")
+        except Exception as e:
+            logger.error("向向量数据库添加文档时出错: %s", e, exc_info=True)
+            raise
+    else:
 
-    logger.info("向量数据库 '%s' 构建完成并准备就绪。", collection_name)
+        logger.info("向量数据库 '%s' 不存在或为空。跳过自动填充。", collection_name)
+
     return vector_store

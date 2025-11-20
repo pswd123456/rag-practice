@@ -38,6 +38,7 @@ class VectorStoreManager:
             self.collection_name,
             embed_model=self.embed_model,
             force_rebuild=rebuild,
+            auto_ingest=False
         )
         return self._vector_store
 

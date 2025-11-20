@@ -7,7 +7,7 @@ from minio import Minio
 from sqlmodel import Session
 
 from app.core.config import settings
-from app.domain.models import Document, DocStatus, Chunk
+from app.domain.models import Document, DocStatus, Chunk, Knowledge
 from app.services.loader import load_single_document, split_docs, normalize_metadata
 from app.services.factories import setup_embed_model
 from app.services.retrieval import setup_vector_store
@@ -32,6 +32,24 @@ def process_document_pipeline(db: Session, doc_id: int):
         logger.error(f"文档 {doc_id} 不存在")
         raise ValueError(f"文档 {doc_id} 不存在")
     
+    knowledge = doc.knowledge_base
+    if not knowledge:
+        # 如果关系没加载出来，手动查一次
+        knowledge = db.get(Knowledge, doc.knowledge_base_id)
+        if not knowledge:
+            logger.error(f"知识库 {doc.knowledge_base_id} 不存在")
+            raise ValueError(f"知识库 {doc.knowledge_base_id} 不存在")
+
+    collection_name = f"kb_{knowledge.id}"
+    embed_model_name = knowledge.embed_model
+
+    chunk_size = knowledge.chunk_size
+    chunk_overlap = knowledge.chunk_overlap
+
+    logger.info(f"开始处理文档 {doc_id}，所属知识库: {knowledge.name} (ID: {knowledge.id})")
+    logger.info(f"配置: Embed={embed_model_name}, Chunk={chunk_size}/{chunk_overlap}, Collection={collection_name}")
+
+
     # 更新状态 -> PROCESSING
     doc.status = DocStatus.PROCESSING
     db.add(doc)
@@ -63,11 +81,11 @@ def process_document_pipeline(db: Session, doc_id: int):
             d.metadata["knowledge_id"] = doc.knowledge_base_id
 
         # 4. 切分
-        splitted_docs = split_docs(normalized_docs)
-
+        splitted_docs = split_docs(normalized_docs, chunk_size, chunk_overlap)
+        
         # 5. 向量化与入库 (Chroma)
-        embed_model = setup_embed_model("text-embedding-v4")
-        vector_store = setup_vector_store(settings.CHROMADB_COLLECTION_NAME, embed_model)
+        embed_model = setup_embed_model(embed_model_name)
+        vector_store = setup_vector_store(collection_name, embed_model)
         chroma_ids = vector_store.add_documents(splitted_docs)
 
         # 6. 保存 Chunk 映射到 Postgres
@@ -108,7 +126,7 @@ def process_document_pipeline(db: Session, doc_id: int):
             logger.error(f"文档 {doc_id} 不存在")
             raise ValueError(f"文档 {doc_id} 不存在")
         doc.status = DocStatus.FAILED
-        doc.error_message = str(e)
+        doc.error_message = str(e)[:500]
         db.add(doc)
         db.commit()
         raise e # 抛出异常让 Worker 也能感知（可选）

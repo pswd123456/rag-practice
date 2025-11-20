@@ -4,7 +4,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFLoader, DirectoryLoader, TextLoader
 
 from pathlib import Path
-from typing import Iterable, List
+from typing import Iterable, List, Optional
 
 from app.core.config import settings
 
@@ -33,19 +33,18 @@ def create_document_loader():
     return loader
 
 
-def get_text_splitter():
+def get_text_splitter(chunk_size: int, chunk_overlap: int):
     """
     配置并返回文本分割器实例。
 
     :return: RecursiveCharacterTextSplitter 实例
     """
-    logger.debug("正在设置文本分割器...")
     text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size = settings.CHUNK_SIZE,     # 每个块的最大长度
-        chunk_overlap  = settings.CHUNK_OVERLAP,  # 块之间的重叠长度，有助于上下文连续性
+        chunk_size = chunk_size,     # 每个块的最大长度
+        chunk_overlap  = chunk_overlap,  # 块之间的重叠长度，有助于上下文连续性
         add_start_index = True # 在元数据中添加块的起始索引
     )
-    logger.debug(f"文本分割器设置完成 (Chunk size: {settings.CHUNK_SIZE}, Overlap: {settings.CHUNK_OVERLAP})。")
+    
     return text_splitter
 
 def load_raw_docs() -> List[Document]:
@@ -71,24 +70,24 @@ def normalize_metadata(docs: Iterable[Document]) -> List[Document]:
     return normalized
 
 
-def split_docs(docs: Iterable[Document]) -> List[Document]:
+def split_docs(docs: Iterable[Document], chunk_size: int, chunk_overlap: int) -> List[Document]:
     """
     对 Document 进行分块。
     """
-    splitter = get_text_splitter()
+    splitter = get_text_splitter(chunk_size, chunk_overlap)
     splitted_docs = splitter.split_documents(list(docs))
-    logger.info("文档分割完成，共 %s 个块。", len(splitted_docs))
+    logger.info(f"文档分割完成 (Size={chunk_size}, Overlap={chunk_overlap})，共 {len(splitted_docs)} 个块。")
     return splitted_docs
 
 
-def get_prepared_docs() -> List[Document]:
+def get_prepared_docs(chunk_size: int = settings.CHUNK_SIZE, chunk_overlap: int = settings.CHUNK_OVERLAP) -> List[Document]:
     """
     加载、清洗并分割文档。
+    for CLI
     """
-    logger.info("开始加载和分割源文档...")
     raw_docs = load_raw_docs()
     normalized_docs = normalize_metadata(raw_docs)
-    return split_docs(normalized_docs)
+    return split_docs(normalized_docs, chunk_size, chunk_overlap)
 
 def load_single_document(file_path: str) -> List[Document]:
     """
