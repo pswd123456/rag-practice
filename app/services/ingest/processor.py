@@ -91,6 +91,22 @@ def process_document_pipeline(db: Session, doc_id: int):
 
     except Exception as e:
         logger.error(f"文档 {doc_id} 处理失败: {str(e)}", exc_info=True)
+
+        if vector_store and chroma_ids:
+            logger.warning(f"检测到处理失败，正在回滚 Chroma 中的 {len(chroma_ids)} 条向量...")
+            try:
+                vector_store.delete(ids=chroma_ids)
+                logger.info("Chroma 向量回滚成功")
+            except Exception as rollback_e:
+                # 这种情况下只能记日志，或者报警人工处理
+                logger.error(f"严重：Chroma 向量回滚失败！这些向量可能成为孤儿数据。IDs: {chroma_ids}, Error: {rollback_e}")       
+
+        db.rollback()
+
+        doc = db.get(Document, doc_id)
+        if not doc:
+            logger.error(f"文档 {doc_id} 不存在")
+            raise ValueError(f"文档 {doc_id} 不存在")
         doc.status = DocStatus.FAILED
         doc.error_message = str(e)
         db.add(doc)
