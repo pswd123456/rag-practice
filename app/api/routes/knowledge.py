@@ -14,6 +14,7 @@ from app.domain.models import (Knowledge,
                                KnowledgeCreate,
                                KnowledgeRead,
                                KnowledgeUpdate,
+                               KnowledgeStatus,
                                Document,
                                DocStatus)
 
@@ -69,6 +70,11 @@ async def handle_delete_knowledge(
     knowledge = db.get(Knowledge, knowledge_id)
     if not knowledge:
         raise HTTPException(status_code=404, detail="知识库不存在")
+    
+    # 立即标记为 DELETING
+    knowledge.status = KnowledgeStatus.DELETING
+    db.add(knowledge)
+    db.commit() # 立即提交，让前端能立刻查到状态变化
 
     # 2. 推送任务到 Redis
     try:
