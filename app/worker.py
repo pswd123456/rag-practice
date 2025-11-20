@@ -1,30 +1,17 @@
+# app/worker.py
 import asyncio
 import logging
 import logging.config
 from typing import Any
-from pathlib import Path
-import tempfile
-import os
-from minio import Minio
 
 from arq import create_pool
 from arq.connections import RedisSettings
-from sqlmodel import Session, select
+from sqlmodel import Session
 
 from app.core.config import settings
 from app.core.logging_setup import get_logging_config
 from app.db.session import engine
-from app.domain.models import Document, DocStatus, Chunk
-from app.services.loader import load_single_document, split_docs, normalize_metadata
-from app.services.factories import setup_embed_model
-from app.services.retrieval import setup_vector_store
-
-minio_client = Minio(
-    settings.MINIO_ENDPOINT,
-    access_key=settings.MINIO_ACCESS_KEY,
-    secret_key=settings.MINIO_SECRET_KEY,
-    secure=settings.MINIO_SECURE
-)
+from app.services.ingest.processor import process_document_pipeline
 
 logging_config_dict = get_logging_config(str(settings.LOG_FILE_PATH))
 logging.config.dictConfig(logging_config_dict)
@@ -38,114 +25,25 @@ async def startup(ctx: Any):
 async def shutdown(ctx: Any):
     logger.info("worker shutdown")
 
-
-def _sync_process_document(doc_id: int):
+def _sync_process_wrapper(doc_id: int):
     """
-    同步执行的文档处理逻辑, 封装在函数中以便在线程池运行
+    Worker 的同步包装器：负责管理 DB Session 生命周期
     """
-
-    logger.info(f"[TASK] 处理文档 {doc_id}")
-
+    logger.info(f"[Worker] 开始处理任务: 文档ID {doc_id}")
+    
+    # Worker 负责创建 Session，确保 Service 层不用管 DB 连接的生命周期
     with Session(engine) as db:
-        # 获取文档记录
-        doc = db.get(Document, doc_id)
-        if not doc:
-            logger.error(f"文档 {doc_id} 不存在")
-            return
-        
-        # 更新状态 -> PROCESSING
-        doc.status = DocStatus.PROCESSING
-        db.add(doc)
-        db.commit()
-
-        temp_file_path = None
-
         try:
-            # 1. 从 MinIO 下载文件到临时目录
-            file_object_name = doc.file_path # 数据库里存的是 MinIO Key
-
-            original_suffix = Path(doc.filename).suffix
-
-            # 创建一个临时文件，不自动删除 (delete=False)，因为我们要把路径传给 loader
-            with tempfile.NamedTemporaryFile(delete=False, suffix=original_suffix) as tmp_file:
-                logger.info(f"正在从 MinIO 下载: {file_object_name}")
-                minio_client.fget_object(
-                    bucket_name=settings.MINIO_BUCKET_NAME,
-                    object_name=file_object_name,
-                    file_path=tmp_file.name
-                )
-                temp_file_path = tmp_file.name
-            
-            logger.debug(f"文件已下载到临时路径: {temp_file_path}")
-            # 2. 加载文档 (传入临时文件路径)
-            # load_single_document 应该能直接读取这个本地临时文件
-            raw_docs = load_single_document(temp_file_path)
-
-            normalized_docs = normalize_metadata(raw_docs)
-            # 这一步会强制将source(项目存放路径, 设置在config)设置为文件名, 并且注入doc_id
-            logger.debug(f"原始文档标准化完成: {len(normalized_docs)} 条")
-
-            for d in normalized_docs:
-                # 使用上传的文件名作为 source (覆盖默认的 data/ 路径)
-                d.metadata["source"] = doc.filename 
-                # 注入数据库 ID，用于未来数据一致性检查
-                d.metadata["doc_id"] = doc.id
-                d.metadata["knowledge_id"] = doc.knowledge_base_id
-
-            if not doc.id:
-                raise ValueError("文档ID不存在")
-
-            splitted_docs = split_docs(normalized_docs)
-            logger.info(f"文档 {doc.id} 切分完成，共 {len(splitted_docs)} 条")
-
-            # 获取/初始化向量库
-            embed_model = setup_embed_model("text-embedding-v4")
-            vector_store = setup_vector_store(
-                settings.CHROMADB_COLLECTION_NAME,
-                embed_model
-            )
-
-            # 入库, 添加到Chroma, 获取返回的IDs
-            chroma_ids = vector_store.add_documents(splitted_docs)
-            logger.info(f"文档 {doc.id} 添加到向量库完成，共 {len(chroma_ids)} 条")
-
-            # 保存chunk映射到 postgresql
-            chunks_to_save = []
-
-            for i, (c_id, s_docs) in enumerate(zip(chroma_ids, splitted_docs)):
-                chunk = Chunk(
-                    document_id=doc.id,
-                    chroma_id=c_id,
-                    chunk_index=i,
-                    content=s_docs.page_content,
-                    page_number=s_docs.metadata.get("page")
-                )
-                chunks_to_save.append(chunk)
-
-            db.add_all(chunks_to_save)
-
-            # 更新状态 -> COMPLETED
-            doc.status = DocStatus.COMPLETED
-            db.add(doc)
-            db.commit()
-            logger.info(f"文档 {doc.id} 处理完成")
-
+            process_document_pipeline(db, doc_id)
         except Exception as e:
-            logger.error(f" 文档 {doc.id} 处理失败: {str(e)}", exc_info=True)
-            doc.status = DocStatus.FAILED
-            doc.error_message = str(e)
-            db.add(doc)
-            db.commit()
-
-        finally:
-            if temp_file_path and os.path.exists(temp_file_path):
-                os.remove(temp_file_path)
-                logger.debug(f"临时文件 {temp_file_path} 已删除")
+            # 异常已在 Service 内部被捕获并更新了数据库状态，
+            # 这里只是为了记录 Worker 级别的日志
+            logger.error(f"[Worker] 任务执行遇到异常: {e}")
 async def process_document_task(ctx: Any, doc_id: int):
     """
     Arq 调用的异步任务入口
     """
-    await asyncio.to_thread(_sync_process_document, doc_id)
+    await asyncio.to_thread(_sync_process_wrapper, doc_id)
 
 
 # --- Arq 配置 ---
