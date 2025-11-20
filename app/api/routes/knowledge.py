@@ -110,16 +110,6 @@ def handle_get_knowledge_documents(
     return db.exec(statement).all()
 
 # ------------------- Vector Store ------------------
-@router.post("/vector-store/reload")
-def reload_vector_store(
-    force: bool = Body(False, description="是否强制重新嵌入所有文档"),
-    manager: VectorStoreManager = Depends(deps.get_vector_store_manager),
-):
-    manager.reload(force_rebuild=force)
-    deps.reset_rag_pipeline()
-    stats = manager.stats()
-    return {"documents": stats["documents"], "collection": stats["collection"]}
-
 
 @router.get("/vector-store/stats")
 def vector_store_stats(
