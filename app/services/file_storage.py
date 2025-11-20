@@ -53,3 +53,15 @@ def save_upload_file(upload_file: UploadFile, knowledge_id: int) -> str:
 
     # 返回 MinIO 中的 Key，这将被存入数据库的 file_path 字段
     return object_name
+
+def delete_file_from_minio(object_name: str):
+    """
+    从 MinIO 中删除指定对象
+    """
+    try:
+        logger.info(f"正在从 MinIO 删除文件: {object_name}")
+        minio_client.remove_object(settings.MINIO_BUCKET_NAME, object_name)
+        logger.info(f"MinIO 文件删除成功: {object_name}")
+    except Exception as e:
+        # 删除失败通常不应该阻断后续的 DB 删除，记录错误即可
+        logger.error(f"MinIO 删除失败: {e}", exc_info=True)

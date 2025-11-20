@@ -5,20 +5,25 @@ from typing import List
 from app.domain.models import Document, Chunk
 from app.services.retrieval import VectorStoreManager
 from app.services.factories import setup_embed_model
+from app.services.file_storage import delete_file_from_minio
 from app.core.config import settings
 
 def delete_document_and_vectors(db: Session, doc_id: int):
     """
     执行原子删除：
-    1. 查找所有关联的 chroma_id。
-    2. 从 ChromaDB 中删除这些向量。
-    3. 从 Postgres 中删除 Chunk 记录。
-    4. 从 Postgres 中删除 Document 记录。
+    1. 从 MinIO 删除源文件
+    2. 查找所有关联的 chroma_id。
+    3. 从 ChromaDB 中删除这些向量。
+    4. 从 Postgres 中删除 Chunk 记录。
+    5. 从 Postgres 中删除 Document 记录。
     """
     # 1. 查找 Document
     doc = db.get(Document, doc_id)
     if not doc:
         raise HTTPException(status_code=404, detail="文档不存在")
+    
+    if doc.file_path:
+        delete_file_from_minio(doc.file_path)
 
     # 2. 查找所有关联的 chroma_id
     # 使用 Relationship 加载关联的 chunks

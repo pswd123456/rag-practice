@@ -29,7 +29,7 @@ async def test_chat_with_knowledge(client, temp_kb):
     # 给 Worker 留出处理时间 (MinIO下载+解析+Embedding+入库)
     # 根据你的电脑性能，3-5秒通常足够处理这个小文本
     print(">>> 等待 Worker 处理文档...")
-    await asyncio.sleep(5) 
+    await asyncio.sleep(3) 
 
     # B. 测试默认策略 (现在应该能查到了)
     res_default = await client.post("/chat/query", json={
