@@ -1,0 +1,22 @@
+# .dockerignore
+
+# 忽略大模型权重，防止拷贝进镜像
+embed_models/
+
+# 忽略本地数据和数据库
+data/
+chromadb/
+chroma_langchain_db/
+*.sqlite3
+*.csv
+
+# 忽略环境和缓存
+venv/
+.venv/
+__pycache__/
+.cache/
+.git/
+.vscode/
+
+# 忽略日志
+logs/

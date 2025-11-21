@@ -1,28 +1,44 @@
-# Dockerfile
-
+# 使用 Python 3.10 Slim 版本作为基础镜像
 FROM python:3.10-slim
 
 WORKDIR /app
 
-# [新增] 1. 换源：将默认的 deb.debian.org 替换为 mirrors.aliyun.com
-# 注意：python:3.10-slim 基于 Debian Bookworm/Trixie，源配置文件通常在 /etc/apt/sources.list.d/debian.sources
+# -----------------------------------------------------------------
+# 1. 系统层优化
+# -----------------------------------------------------------------
+# 替换 Debian 系统源为阿里源 (加速 apt install)
 RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources
 
-# [原有] 2. 安装系统依赖 (现在应该飞快了)
+# 安装必要的系统依赖 (保留了你之前的列表)
 RUN apt-get update && apt-get install -y \
     build-essential \
     libpq-dev \
     curl \
     libgl1 \
     libglib2.0-0 \
+    git \
     && rm -rf /var/lib/apt/lists/*
+
+# -----------------------------------------------------------------
+# 2. 依赖层优化 (引入 uv)
+# -----------------------------------------------------------------
+# [关键] 从官方镜像中直接复制 uv 二进制文件 (这是最安全、最新的安装方式)
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+
+RUN uv pip install --system torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 
 COPY requirements.txt .
 
-# [原有] Python 依赖安装 (这一步你已经配置了国内源，保持不动)
-RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/
+# [关键] 使用 uv 替代 pip 安装依赖
+# --system    : 直接安装到系统 Python 环境中 (Docker 容器内不需要再创建 venv)
+# --index-url : 强制指定阿里源
+# --mount     : 挂载缓存目录，确保下一次构建更快
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --system -r requirements.txt --index-url https://mirrors.aliyun.com/pypi/simple/
 
+# -----------------------------------------------------------------
+# 3. 源码层
+# -----------------------------------------------------------------
 COPY . .
 
 ENV PYTHONPATH=/app

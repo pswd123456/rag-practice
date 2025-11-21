@@ -13,6 +13,7 @@ services:
       POSTGRES_USER: myuser
       POSTGRES_PASSWORD: mypassword
       POSTGRES_DB: rag_db
+      TZ: Asia/Shanghai
     volumes:
       - pg_data:/var/lib/postgresql/data
     networks:
@@ -90,6 +91,7 @@ services:
       # 透传 API Key (如果 .env 里有，这里会自动读取，不需要硬编码)
       - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - TZ=Asia/Shanghai
       # 其他配置保持默认或从 .env 读取
     depends_on:
       db:
@@ -106,6 +108,8 @@ services:
       # 👇 新增这一行：把当前目录挂载到容器的 /app
       # 这样你改本地代码，容器里立即生效（重启容器即可，不用 Build）
       - ./:/app
+      - /etc/localtime:/etc/localtime:ro  # <--- 挂载宿主机时钟文件
+      - /etc/timezone:/etc/timezone:ro    # <--- 挂载时区配置
   # 异步任务 Worker
   worker:
     build: .
@@ -124,6 +128,9 @@ services:
       - CHROMA_SERVER_PORT=8000
       - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - TZ=Asia/Shanghai
+      - /etc/localtime:/etc/localtime:ro  # <--- 挂载宿主机时钟文件
+      - /etc/timezone:/etc/timezone:ro    # <--- 挂载时区配置
     depends_on:
       db:
         condition: service_healthy
