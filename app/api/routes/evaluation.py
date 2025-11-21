@@ -12,6 +12,8 @@ from app.domain.models import (
 )
 from pydantic import BaseModel
 
+from app.services import evaluation_crud
+
 router = APIRouter()
 
 # --- Schemas (临时定义在这里，也可移到 domain/schemas) ---
@@ -71,12 +73,22 @@ def get_testset(
     db: Session = Depends(deps.get_db_session)
 ):
     """
-    [新增] 获取单个测试集详情，用于前端轮询状态
+    获取单个测试集详情，用于前端轮询状态
     """
     ts = db.get(Testset, testset_id)
     if not ts:
         raise HTTPException(status_code=404, detail="Testset not found")
     return ts
+
+@router.delete("/testsets/{testset_id}")
+def delete_testset_endpoint(
+    testset_id: int,
+    db: Session = Depends(deps.get_db_session)
+):
+    """
+    [新增] 删除测试集 (同步删除 MinIO 文件和关联实验)
+    """
+    return evaluation_crud.delete_testset(db, testset_id)
 
 # -------------------------------------------------------
 # 2. Experiment 管理
@@ -148,3 +160,13 @@ def get_experiment(
     if not exp:
         raise HTTPException(status_code=404, detail="Experiment not found")
     return exp
+
+@router.delete("/experiments/{experiment_id}")
+def delete_experiment_endpoint(
+    experiment_id: int,
+    db: Session = Depends(deps.get_db_session)
+):
+    """
+    删除实验记录
+    """
+    return evaluation_crud.delete_experiment(db, experiment_id)

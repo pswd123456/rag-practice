@@ -61,3 +61,81 @@ async def test_upload_flow(client, temp_kb):
     assert isinstance(response.json(), int)
     
     # 测试结束，Pytest 会自动跳回去执行 temp_kb 里 yield 后面的代码 (执行删除)
+
+@pytest.mark.asyncio
+async def test_evaluation_crud(client):
+    """
+    验证 Testset 和 Experiment 的创建与删除 (包含级联逻辑验证)
+    """
+    # 1. 造假数据：我们需要一个 Testset 记录 (不一定要真的生成文件，只测 DB 逻辑)
+    #    因为 API 需要 source_doc_ids，我们先造一个空的 Testset 记录
+    #    或者，我们直接 mock create_generation_task 的入参
+    
+    # 为了简单，我们直接调用 API 创建一个 Testset 任务
+    # (注意：由于没有真实的文档，worker 可能会失败，但 Testset 记录会创建)
+    ts_name = f"testset_{get_random_suffix()}"
+    create_res = await client.post("/evaluation/testsets", json={
+        "name": ts_name,
+        "source_doc_ids": [] # 空列表
+    })
+    assert create_res.status_code == 200
+    ts_id = create_res.json()
+    
+    # 2. 验证 Testset 存在
+    get_ts = await client.get(f"/evaluation/testsets/{ts_id}")
+    assert get_ts.status_code == 200
+    assert get_ts.json()["status"] == "GENERATING" # 初始状态
+    
+    # 3. 创建一个 Experiment (为了测试级联删除)
+    # 需要先有一个 knowledge，我们临时建一个
+    kb_name = f"kb_for_exp_{get_random_suffix()}"
+    kb_res = await client.post("/knowledge/knowledges", json={"name": kb_name})
+    kb_id = kb_res.json()["id"]
+    
+    exp_res = await client.post("/experiments", json={
+        "knowledge_id": kb_id,
+        "testset_id": ts_id,
+        "runtime_params": {"top_k": 1}
+    })
+    # 注意：/experiments 路径可能要检查 evaluation.py 里的 prefix
+    # 在 api/__init__.py 中，evaluation 的 prefix 是 /evaluation
+    # 这里的 post 路径应该是 /evaluation/experiments
+    # 修正 client 调用路径：
+    exp_res = await client.post("/evaluation/experiments", json={
+        "knowledge_id": kb_id,
+        "testset_id": ts_id,
+        "runtime_params": {"top_k": 1}
+    })
+    assert exp_res.status_code == 200
+    exp_id = exp_res.json()
+    
+    # 4. 验证单独删除 Experiment
+    del_exp = await client.delete(f"/evaluation/experiments/{exp_id}")
+    assert del_exp.status_code == 200
+    
+    # 验证没了
+    get_exp = await client.get(f"/evaluation/experiments/{exp_id}")
+    assert get_exp.status_code == 404
+    
+    # 5. 再次创建一个 Experiment，用于测试删除 Testset 时的级联删除
+    exp_res_2 = await client.post("/evaluation/experiments", json={
+        "knowledge_id": kb_id,
+        "testset_id": ts_id,
+        "runtime_params": {"top_k": 1}
+    })
+    exp_id_2 = exp_res_2.json()
+    
+    # 6. 删除 Testset
+    del_ts = await client.delete(f"/evaluation/testsets/{ts_id}")
+    assert del_ts.status_code == 200
+    
+    # 7. 验证 Testset 没了
+    get_ts_2 = await client.get(f"/evaluation/testsets/{ts_id}")
+    assert get_ts_2.status_code == 404
+    
+    # 8. 【关键】验证 Experiment 2 也被级联删除了
+    get_exp_2 = await client.get(f"/evaluation/experiments/{exp_id_2}")
+    assert get_exp_2.status_code == 404
+    
+    # 清理 Knowledge
+    await client.delete(f"/knowledge/knowledges/{kb_id}")

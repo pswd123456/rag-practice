@@ -140,6 +140,14 @@ def create_testset(name, doc_ids):
     except Exception as e:
         return False, str(e)
 
+def delete_testset(ts_id):
+    """[新增] 删除测试集"""
+    try:
+        res = httpx.delete(f"{API_BASE_URL}/evaluation/testsets/{ts_id}")
+        return res.status_code == 200, res.text
+    except Exception as e:
+        return False, str(e)
+
 def get_experiments(kb_id):
     try:
         res = httpx.get(f"{API_BASE_URL}/evaluation/experiments", params={"knowledge_id": kb_id})
@@ -172,6 +180,14 @@ def run_experiment(kb_id, testset_id, params):
             return True, res.json() # 这里直接返回 ID (int)
         else:
             return False, res.text
+    except Exception as e:
+        return False, str(e)
+
+def delete_experiment(exp_id):
+    """[新增] 删除实验"""
+    try:
+        res = httpx.delete(f"{API_BASE_URL}/evaluation/experiments/{exp_id}")
+        return res.status_code == 200, res.text
     except Exception as e:
         return False, str(e)
 
@@ -496,57 +512,59 @@ if selected_kb:
                 st.subheader("📈 历史实验记录")
                 experiments = get_experiments(selected_kb['id'])
                 if experiments:
-                    # 转为 DataFrame 展示
-                    data = []
+                    # [修改] 为了正确展示长名字指标，调整了列宽分配
+                    # 表头
+                    h1, h2, h3, h4, h5 = st.columns([0.5, 1.5, 4.5, 2, 1])
+                    h1.markdown("**ID**")
+                    h2.markdown("**状态**")
+                    h3.markdown("**各项指标 (DB字段)**") # [修改] 标题更清晰
+                    h4.markdown("**参数**")
+                    h5.markdown("**操作**")
+                    st.divider()
+
                     for exp in experiments:
+                        c1, c2, c3, c4, c5 = st.columns([0.5, 1.5, 4.5, 2, 1])
+                        
+                        c1.text(f"#{exp['id']}")
+                        
+                        # 状态
+                        status = exp['status']
+                        if status == "COMPLETED":
+                            c2.success("✅ 完成")
+                        elif status == "FAILED":
+                            c2.error("❌ 失败")
+                        else:
+                            c2.warning(f"⏳ {status}")
+                            
+                        # 得分 [修改] 垂直排列显示所有4个指标的DB原名
+                        if status == "COMPLETED":
+                            # 使用 markdown 换行符
+                            metrics_display = f"""
+                            **faithfulness**: {exp.get('faithfulness', 0):.4f}  
+                            **answer_relevancy**: {exp.get('answer_relevancy', 0):.4f}  
+                            **context_recall**: {exp.get('context_recall', 0):.4f}  
+                            **context_precision**: {exp.get('context_precision', 0):.4f}
+                            """
+                            c3.markdown(metrics_display)
+                        else:
+                            c3.caption("-")
+                            
+                        # 参数
                         params = exp.get("runtime_params", {}) or {}
-                        data.append({
-                            "ID": exp["id"],
-                            "状态": exp["status"],
-                            # [修改] 使用全称，并补全 Context Precision
-                            "Faithfulness": round(exp.get("faithfulness", 0), 3),
-                            "Answer Relevancy": round(exp.get("answer_relevancy", 0), 3),
-                            "Context Recall": round(exp.get("context_recall", 0), 3),
-                            "Context Precision": round(exp.get("context_precision", 0), 3),
-                            # 参数列
-                            "TopK": params.get("top_k"),
-                            "Strategy": params.get("strategy"),
-                            "LLM": params.get("llm"),
-                            "时间": exp["created_at"][:16].replace("T", " ")
-                        })
-                    
-                    df = pd.DataFrame(data)
-                    
-                    # [修改] 配置 4 个指标的进度条和全名标签
-                    st.dataframe(
-                        df, 
-                        use_container_width=True,
-                        column_config={
-                            "Faithfulness": st.column_config.ProgressColumn(
-                                "Faithfulness (忠实度)", 
-                                help="答案是否忠实于上下文",
-                                min_value=0, max_value=1, format="%.3f"
-                            ),
-                            "Answer Relevancy": st.column_config.ProgressColumn(
-                                "Answer Relevancy (回答相关性)", 
-                                help="回答是否直接回应了问题",
-                                min_value=0, max_value=1, format="%.3f"
-                            ),
-                            "Context Recall": st.column_config.ProgressColumn(
-                                "Context Recall (上下文召回率)", 
-                                help="检索到的上下文是否包含所有必要信息",
-                                min_value=0, max_value=1, format="%.3f"
-                            ),
-                            "Context Precision": st.column_config.ProgressColumn(
-                                "Context Precision (上下文精度)", 
-                                help="检索到的上下文中有多少是真正有用的",
-                                min_value=0, max_value=1, format="%.3f"
-                            ),
-                        }
-                    )
-                    
-                    if st.button("🔄 刷新列表"):
-                        st.rerun()
+                        param_str = f"TopK:{params.get('top_k')} | {params.get('strategy')}"
+                        c4.text(param_str)
+                        
+                        # 操作
+                        if c5.button("🗑️", key=f"del_exp_{exp['id']}"):
+                            success, msg = delete_experiment(exp['id'])
+                            if success:
+                                st.toast(f"实验 {exp['id']} 已删除")
+                                time.sleep(1)
+                                st.rerun()
+                            else:
+                                st.error(msg)
+                        
+                        st.divider()
                 else:
                     st.info("当前知识库暂无实验记录。")
 
@@ -606,7 +624,7 @@ if selected_kb:
             ts_list = get_testsets()
             if ts_list:
                 for ts in ts_list:
-                    col1, col2, col3 = st.columns([3, 2, 1])
+                    col1, col2, col3, col4 = st.columns([3, 2, 1, 1]) # [修改] 增加一列
                     with col1:
                         st.markdown(f"**{ts['name']}** (ID: {ts['id']})")
                         st.caption(f"路径: `{ts['file_path']}`")
@@ -623,6 +641,18 @@ if selected_kb:
                             st.info(status)
                     with col3:
                         st.caption(ts['created_at'][:10])
+                    
+                    # [新增] 删除按钮
+                    with col4:
+                         if st.button("🗑️", key=f"del_ts_{ts['id']}", help="删除此测试集"):
+                            success, msg = delete_testset(ts['id'])
+                            if success:
+                                st.toast(f"测试集 {ts['name']} 已删除")
+                                time.sleep(1)
+                                st.rerun()
+                            else:
+                                st.error(msg)
+
                     st.divider()
 
     # ----------- Tab 4: 设置 -----------
