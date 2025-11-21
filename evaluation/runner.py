@@ -122,22 +122,34 @@ class RAGEvaluator:
         返回:
             datasets.Dataset: 处理完成并包含 RAG 输出的测试集。
         """
-        logger.info("开始加载和处理测试集...")
-        hf_dataset =  load_dataset("csv", data_files=str(settings.TESTSET_OUTPUT_PATH))
+        if self.test_dataset is None:
+            logger.info(f"TestDataset 为空，尝试从默认路径加载: {settings.TESTSET_OUTPUT_PATH}")
+            # 只有为空时，才去读本地文件
+            try:
+                hf_dataset = load_dataset("csv", data_files=str(settings.TESTSET_OUTPUT_PATH))
+                self.test_dataset = hf_dataset["train"]
+                
+                # 只有从原始 CSV 加载时，才需要重命名和清洗
+                logger.debug("重命名列以匹配 Ragas schema...")
+                rename_columns_dict = {
+                    "user_input": "question",
+                    "reference": "ground_truth",
+                }
+                # 简单检查列是否存在再重命名
+                if "user_input" in self.test_dataset.column_names:
+                    self.test_dataset = self.test_dataset.rename_columns(rename_columns_dict)
+                
+                logger.debug("删除不必要的原始列...")
+                cols_to_remove = ["reference_contexts", 'synthesizer_name']
+                existing_cols = self.test_dataset.column_names
+                self.test_dataset = self.test_dataset.remove_columns([c for c in cols_to_remove if c in existing_cols])
+                
+            except Exception as e:
+                logger.error(f"默认路径加载失败: {e}")
+                raise e
+        else:
+            logger.info("TestDataset 已被注入，跳过文件加载步骤。")
 
-        self.test_dataset = hf_dataset["train"]
-        assert isinstance(self.test_dataset, Dataset)    
-
-        logger.debug("重命名列以匹配 Ragas schema (question, ground_truth)...")
-        rename_columns_dict = {
-            "user_input": "question",
-            "reference": "ground_truth",
-        }
-        self.test_dataset = self.test_dataset.rename_columns(rename_columns_dict)
-        
-        logger.debug("删除不必要的原始列...")
-        self.test_dataset = self.test_dataset.remove_columns(["reference_contexts", 'synthesizer_name'])
-        
         logger.info("开始使用 RAG 管道为测试集生成 'answer' 和 'contexts' (map)...")
         self.test_dataset = self.test_dataset.map(
             self._integrate_testset,
