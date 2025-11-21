@@ -74,6 +74,7 @@ services:
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     ports:
       - "8000:8000" # 宿主机访问入口
+      - "8002:8001" # mkdocs入口
     env_file:
       - .env # 加载 .env 文件中的 API KEY
     environment:

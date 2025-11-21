@@ -1,32 +1,73 @@
-# mkdocs.yml
-site_name: "我的 RAG 实验项目"
-site_description: "一个用于 RAG 实验和学习的 API 项目"
+site_name: "RAG Service V4 文档"
+site_description: "基于 RAG 的垂直领域 AI 服务工程实践文档"
+site_author: "AI Application Engineer"
 
-# 1. 使用 Material 主题
+# 1. 主题配置
 theme:
   name: material
-  palette:
-    - scheme: default # 日间模式
-    - scheme: slate  # 夜间模式
+  language: zh
   features:
-    - navigation.tabs # 顶部导航
-    - navigation.top  # 返回顶部按钮
+    - navigation.tabs # 顶部标签导航
+    - navigation.top  # 返回顶部
+    - navigation.indexes # 允许目录文件
     - search.suggest  # 搜索建议
+    - search.highlight # 搜索高亮
+    - content.code.copy # 代码块复制按钮
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: 切换至夜间模式
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: 切换至日间模式
 
-# 2. 配置 mkdocstrings 插件
+# 2. 插件配置
 plugins:
   - search
   - mkdocstrings:
       handlers:
-        python: # 专门处理 Python
+        python:
+          paths: [.] # 根目录，确保能找到 app 包
           options:
-            docstring_style: google # 告诉它你用的是 Google 风格
+            docstring_style: google
+            show_root_heading: true
+            show_source: true
 
-# 3. 定义导航栏
+# 3. Markdown 扩展
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences: # 支持 Mermaid
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - admonition
+  - attr_list
+  - md_in_html
+
+# 4. 导航结构
 nav:
   - "首页": index.md
-  - "RAG 实验": 
+  - "架构设计": architecture.md
+  - "RAG 实验":
     - "实验日志": experiments/log.md
-  - "API 参考":
-    - "RAG 管道": reference/pipeline.md
-    - "核心工具": reference/util.md
+  - "代码参考":
+    - "Domain Models": reference/models.md
+    - "RAG Pipeline": reference/pipeline.md
+    - "Services":
+        - "Ingest (数据摄取)": reference/services/ingest.md
+        - "Retrieval (检索)": reference/services/retrieval.md
+        - "Generation (生成)": reference/services/generation.md
+        - "Evaluation (评估)": reference/services/evaluation.md
+    - "Core Config": reference/core.md
