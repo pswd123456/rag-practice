@@ -4,7 +4,17 @@ import pandas as pd
 from datetime import datetime
 import time
 
-API_BASE_URL = "http://localhost:8000"
+API_BASE_URL = "http://api:8000" # Docker 内部通信用服务名，如果你在宿主机跑 Streamlit 改为 localhost:8000
+
+# 注意：如果 Streamlit 也在 Docker 里，这里用 api:8000
+# 如果你在本地直接 python frontend/app.py 跑，这里要改成 http://localhost:8000
+# 为了兼容，我们可以尝试自动检测或你可以手动改
+try:
+    # 简单探测一下，如果 localhost 通就不改，不通就切 api
+    httpx.get("http://localhost:8000", timeout=1)
+    API_BASE_URL = "http://localhost:8000"
+except:
+    API_BASE_URL = "http://api:8000"
 
 st.set_page_config(page_title="RAG 知识库管理台", layout="wide", page_icon="🗂️")
 
@@ -35,6 +45,9 @@ def get_document_status(doc_id):
         res = httpx.get(f"{API_BASE_URL}/knowledge/documents/{doc_id}")
         if res.status_code == 200:
             return res.json().get("status")
+        # [新增] 如果是 404，说明文档没了
+        elif res.status_code == 404:
+            return "NOT_FOUND"
     except:
         pass
     return None
@@ -49,7 +62,7 @@ def delete_document(doc_id):
 def delete_knowledge(kb_id):
     try:
         res = httpx.delete(f"{API_BASE_URL}/knowledge/knowledges/{kb_id}")
-        return res.status_code == 200, res.text
+        return res.status_code == 200 or res.status_code == 202, res.text
     except Exception as e:
         return False, str(e)
 
@@ -62,22 +75,86 @@ def update_knowledge(kb_id, name, desc):
     except Exception as e:
         return False, str(e)
 
+# --- 评估相关 ---
+def get_testsets():
+    try:
+        res = httpx.get(f"{API_BASE_URL}/evaluation/testsets")
+        if res.status_code == 200:
+            return res.json()
+    except:
+        pass
+    return []
+
+def create_testset(name, doc_ids):
+    try:
+        res = httpx.post(f"{API_BASE_URL}/evaluation/testsets", json={
+            "name": name, "source_doc_ids": doc_ids
+        })
+        # 返回 ID (int) 或 错误文本
+        if res.status_code == 200:
+            return True, res.text 
+        else:
+            return False, res.text
+    except Exception as e:
+        return False, str(e)
+
+def get_experiments(kb_id):
+    try:
+        res = httpx.get(f"{API_BASE_URL}/evaluation/experiments", params={"knowledge_id": kb_id})
+        if res.status_code == 200:
+            return res.json()
+    except:
+        pass
+    return []
+
+def run_experiment(kb_id, testset_id, params):
+    try:
+        payload = {
+            "knowledge_id": kb_id,
+            "testset_id": testset_id,
+            "runtime_params": params
+        }
+        res = httpx.post(f"{API_BASE_URL}/evaluation/experiments", json=payload, timeout=10.0)
+        return res.status_code == 200, res.text
+    except Exception as e:
+        return False, str(e)
+
 # ================== 侧边栏：知识库导航 ==================
 with st.sidebar:
     st.header("📚 知识库列表")
     
     # 1. 创建区
     with st.expander("➕ 新建知识库", expanded=False):
-        new_name = st.text_input("名称 (Unique)", key="new_kb_name")
-        new_desc = st.text_input("描述", key="new_kb_desc")
-        if st.button("立即创建"):
-            if new_name:
-                res = httpx.post(f"{API_BASE_URL}/knowledge/knowledges", json={"name": new_name, "description": new_desc})
-                if res.status_code == 200:
-                    st.success("创建成功")
-                    st.rerun()
-                else:
-                    st.error(res.text)
+        with st.form("create_kb_form"):
+            new_name = st.text_input("名称 (Unique)", key="new_kb_name")
+            new_desc = st.text_input("描述", key="new_kb_desc")
+            
+            st.caption("🔧 构建配置 (创建后不可修改)")
+            col_c1, col_c2 = st.columns(2)
+            with col_c1:
+                new_embed = st.selectbox("Embedding", ["text-embedding-v4", "text-embedding-v3"])
+            with col_c2:
+                new_chunk_size = st.number_input("Chunk Size", value=500, step=100)
+                new_overlap = st.number_input("Overlap", value=50)
+            
+            if st.form_submit_button("立即创建"):
+                if new_name:
+                    payload = {
+                        "name": new_name, "description": new_desc,
+                        "embed_model": new_embed,
+                        "chunk_size": new_chunk_size,
+                        "chunk_overlap": new_overlap
+                    }
+                    try:
+                        res = httpx.post(f"{API_BASE_URL}/knowledge/knowledges", json=payload)
+                        if res.status_code == 200:
+                            st.success("创建成功")
+                            time.sleep(1)
+                            st.rerun()
+                        else:
+                            st.error(res.text)
+                    except Exception as e:
+                        st.error(str(e))
 
     st.divider()
 
@@ -87,46 +164,45 @@ with st.sidebar:
         st.info("暂无知识库，请先创建")
         selected_kb = None
     else:
-        # --- 修改开始 ---
-        # 构造显示名称，如果正在删除，加上醒目标记
         kb_options = {}
         for k in kb_list:
             display_name = k["name"]
-            # 后端返回的 dict 里现在会有 "status" 字段
             if k.get("status") == "DELETING":
                 display_name = f"🔴 {display_name} (删除中...)"
-            
             kb_options[display_name] = k
 
-        # 使用处理过的 key 作为选项
         selected_option = st.radio("选择知识库", list(kb_options.keys()))
         selected_kb = kb_options[selected_option]
 
-# ================== 主界面：Tab 页签管理 ==================
+
+# ================== 主界面 ==================
 
 if selected_kb:
+    # 状态拦截
+    if selected_kb.get("status") == "DELETING":
+        st.warning(f"⚠️ 知识库「{selected_kb['name']}」正在后台异步删除中。")
+        st.info("请稍等片刻，或点击左上角手动刷新以查看最新状态。")
+        st.stop()
+
     st.header(f"当前知识库: {selected_kb['name']}")
-    st.caption(f"ID: {selected_kb['id']} | {selected_kb['description']}")
+    # 显示配置标签
+    st.caption(f"ID: {selected_kb['id']} | Embed: `{selected_kb.get('embed_model')}` | Chunk: `{selected_kb.get('chunk_size')}`")
 
-    # 使用 Tabs 分离功能，界面更清爽
-    tab1, tab2, tab3 = st.tabs(["💬 对话检索", "📄 文档管理", "⚙️ 设置"])
+    tab1, tab2, tab3, tab4 = st.tabs(["💬 对话检索", "📄 文档管理", "📊 评估实验", "⚙️ 设置"])
 
-    # ----------- Tab 1: 对话检索 (原功能) -----------
+    # ----------- Tab 1: 对话检索 -----------
     with tab1:
         col_s1, col_s2 = st.columns([1, 4])
         with col_s1:
             strategy = st.selectbox("检索策略", ["default", "dense_only", "hybrid", "rerank"])
         
-        # 初始化聊天
         if "messages" not in st.session_state:
             st.session_state.messages = []
             
-        # 清空历史按钮
         if st.button("🧹 清空对话"):
             st.session_state.messages = []
             st.rerun()
 
-        # 显示历史
         for msg in st.session_state.messages:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
@@ -136,7 +212,6 @@ if selected_kb:
                             st.markdown(f"**[{idx+1}] {src['source_filename']}**")
                             st.caption(src['chunk_content'])
 
-        # 输入框
         if prompt := st.chat_input("在这个知识库中搜索..."):
             st.session_state.messages.append({"role": "user", "content": prompt})
             with st.chat_message("user"):
@@ -160,42 +235,36 @@ if selected_kb:
                                         st.markdown(f"**[{idx+1}] {src['source_filename']}**")
                                         st.caption(src['chunk_content'])
                             
-                            # [FIX] 手动构造符合前端要求的字典
                             st.session_state.messages.append({
-                                "role": "assistant",        # 补充 role
-                                "content": data["answer"],  # 将 answer 映射为 content
-                                "sources": data["sources"]  # 保留 sources
+                                "role": "assistant",
+                                "content": data["answer"],
+                                "sources": data["sources"]
                             })
                         else:
                             st.error(res.text)
                     except Exception as e:
                         st.error(str(e))
 
-    # ----------- Tab 2: 文档管理 (新增) -----------
+    # ----------- Tab 2: 文档管理 -----------
     with tab2:
-        # A. 上传区
         with st.container():
             st.subheader("📤 上传文件")
             uploaded_file = st.file_uploader("支持 PDF/TXT/MD", type=["pdf", "txt", "md"])
             if uploaded_file and st.button("开始上传", type="primary"):
                 files = {"file": (uploaded_file.name, uploaded_file, uploaded_file.type)}
-                
-                # 1. 上传阶段
                 with st.spinner("正在上传文件..."):
                     try:
                         res = httpx.post(f"{API_BASE_URL}/knowledge/{selected_kb['id']}/upload", files=files, timeout=60.0)
                         if res.status_code == 200:
-                            doc_id = res.json() # 假设后端返回的是 int ID
+                            doc_id = res.json()
                             st.toast(f"文件已上传 (ID: {doc_id})，开始后台处理...", icon="🚀")
                         else:
                             st.error(f"上传失败: {res.text}")
-                            st.stop() # 停止后续执行
+                            st.stop()
                     except Exception as e:
                         st.error(f"Error: {e}")
                         st.stop()
 
-                # 2. 轮询阶段 (新增逻辑)
-                # st.status 创建一个可折叠的状态框
                 with st.status("正在解析与向量化...", expanded=True) as status:
                     st.write("Worker 正在努力工作中...")
                     
@@ -206,7 +275,6 @@ if selected_kb:
                         if current_status == "COMPLETED":
                             status.update(label="✅ 处理完成！", state="complete", expanded=False)
                             st.success(f"文档 {uploaded_file.name} 已成功入库！")
-                            # 延迟 1 秒后刷新页面，让用户看清成功提示
                             time.sleep(1)
                             st.rerun()
                             break
@@ -216,28 +284,28 @@ if selected_kb:
                             st.error("后台处理发生错误，请检查 Worker 日志。")
                             break
                         
+                        # [新增] 处理文档消失的情况
+                        elif current_status == "NOT_FOUND":
+                            status.update(label="⚠️ 文档丢失", state="error", expanded=True)
+                            st.error(f"文档 {doc_id} 未找到，可能已被删除或数据库已重置。")
+                            break
+                        
                         # 如果还在 PROCESSING 或 PENDING，等待 2 秒再查
                         time.sleep(2)
 
         st.divider()
         
-        # B. 列表区
         st.subheader("📑 已收录文档")
         docs = get_documents(selected_kb['id'])
-        
         if docs:
-            # 表头
             c1, c2, c3, c4 = st.columns([3, 2, 2, 1])
             c1.markdown("**文件名**")
             c2.markdown("**状态**")
             c3.markdown("**上传时间**")
             c4.markdown("**操作**")
-            
             for doc in docs:
                 c1, c2, c3, c4 = st.columns([3, 2, 2, 1])
                 c1.text(doc['filename'])
-                
-                # 状态徽章
                 status = doc['status']
                 if status == "COMPLETED":
                     c2.success("✅ 完成")
@@ -245,33 +313,175 @@ if selected_kb:
                     c2.error("❌ 失败")
                 else:
                     c2.warning(f"⏳ {status}")
-                
-                c3.text(doc['created_at'][:16].replace("T", " ")) # 简单格式化时间
-                
-                # 删除按钮 (使用 key 区分不同文档)
+                c3.text(doc['created_at'][:16].replace("T", " "))
                 if c4.button("🗑️", key=f"del_{doc['id']}", help="删除此文档"):
                     success, msg = delete_document(doc['id'])
                     if success:
                         st.toast(f"文档 {doc['filename']} 已删除")
-                        # 延迟一点点刷新，让用户看到 toast
-                        import time
                         time.sleep(1)
                         st.rerun()
                     else:
                         st.error(msg)
-                
                 st.divider()
         else:
             st.info("当前知识库暂无文档。")
 
-    # ----------- Tab 3: 知识库设置 (新增) -----------
+    # ----------- Tab 3: 评估实验 -----------
     with tab3:
-        st.subheader("⚙️ 基本信息修改")
+        st.caption("在此处管理测试集并运行对比实验。")
+        eval_tab1, eval_tab2 = st.tabs(["🧪 实验看板", "📝 测试集管理"])
         
+        # === 子标签 1: 实验看板 ===
+        with eval_tab1:
+            col_e1, col_e2 = st.columns([1, 3])
+            with col_e1:
+                st.subheader("🚀 发起新实验")
+                testsets = get_testsets()
+                # [新增] 过滤：只保留 COMPLETED 的测试集
+                ready_testsets = [ts for ts in testsets if ts.get('status') == 'COMPLETED']
+                
+                if not ready_testsets:
+                    if testsets:
+                        st.warning("有测试集正在生成中，请稍候...")
+                    else:
+                        st.warning("请先在“测试集管理”中生成测试集")
+                else:
+                    with st.form("run_exp_form"):
+                        # [修改] 使用过滤后的列表
+                        ts_options = {f"{ts['name']} (ID:{ts['id']})": ts['id'] for ts in ready_testsets}
+                        selected_ts_name = st.selectbox("选择测试集", list(ts_options.keys()))
+                        # ... (后续代码不变)
+                        selected_ts_id = ts_options[selected_ts_name]
+                        
+                        st.markdown("**运行时参数**")
+                        exp_top_k = st.slider("Top K", 1, 10, 3)
+                        exp_strategy = st.selectbox("检索策略", ["default", "hybrid", "rerank"])
+                        exp_llm = st.selectbox("学生 LLM", ["qwen-flash", "qwen-turbo", "qwen-plus"])
+                        
+                        if st.form_submit_button("开始评估", type="primary"):
+                            params = {"top_k": exp_top_k, "strategy": exp_strategy, "llm": exp_llm}
+                            success, msg = run_experiment(selected_kb['id'], selected_ts_id, params)
+                            if success:
+                                st.toast("实验已提交后台运行！", icon="🏃")
+                                time.sleep(1)
+                                st.rerun()
+                            else:
+                                st.error(msg)
+            
+            with col_e2:
+                st.subheader("📈 历史实验记录")
+                experiments = get_experiments(selected_kb['id'])
+                if experiments:
+                    # 转为 DataFrame 展示
+                    data = []
+                    for exp in experiments:
+                        params = exp.get("runtime_params", {}) or {}
+                        data.append({
+                            "ID": exp["id"],
+                            "状态": exp["status"],
+                            # [修改] 使用全称，并补全 Context Precision
+                            "Faithfulness": round(exp.get("faithfulness", 0), 3),
+                            "Answer Relevancy": round(exp.get("answer_relevancy", 0), 3),
+                            "Context Recall": round(exp.get("context_recall", 0), 3),
+                            "Context Precision": round(exp.get("context_precision", 0), 3),
+                            # 参数列
+                            "TopK": params.get("top_k"),
+                            "Strategy": params.get("strategy"),
+                            "LLM": params.get("llm"),
+                            "时间": exp["created_at"][:16].replace("T", " ")
+                        })
+                    
+                    df = pd.DataFrame(data)
+                    
+                    # [修改] 配置 4 个指标的进度条和全名标签
+                    st.dataframe(
+                        df, 
+                        use_container_width=True,
+                        column_config={
+                            "Faithfulness": st.column_config.ProgressColumn(
+                                "Faithfulness (忠实度)", 
+                                help="答案是否忠实于上下文",
+                                min_value=0, max_value=1, format="%.3f"
+                            ),
+                            "Answer Relevancy": st.column_config.ProgressColumn(
+                                "Answer Relevancy (回答相关性)", 
+                                help="回答是否直接回应了问题",
+                                min_value=0, max_value=1, format="%.3f"
+                            ),
+                            "Context Recall": st.column_config.ProgressColumn(
+                                "Context Recall (上下文召回率)", 
+                                help="检索到的上下文是否包含所有必要信息",
+                                min_value=0, max_value=1, format="%.3f"
+                            ),
+                            "Context Precision": st.column_config.ProgressColumn(
+                                "Context Precision (上下文精度)", 
+                                help="检索到的上下文中有多少是真正有用的",
+                                min_value=0, max_value=1, format="%.3f"
+                            ),
+                        }
+                    )
+                    
+                    if st.button("🔄 刷新列表"):
+                        st.rerun()
+                else:
+                    st.info("当前知识库暂无实验记录。")
+
+        # === 子标签 2: 测试集管理 ===
+        with eval_tab2:
+            st.info("基于当前知识库的文档生成测试集。")
+            with st.expander("✨ 生成新测试集", expanded=True):
+                current_docs = get_documents(selected_kb['id'])
+                if not current_docs:
+                    st.error("当前知识库没有文档，无法生成。")
+                else:
+                    with st.form("create_testset_form"):
+                        ts_name = st.text_input("测试集名称", placeholder="例如: 2024财报-困难模式")
+                        doc_options = {d['filename']: d['id'] for d in current_docs}
+                        selected_docs = st.multiselect("选择源文档", list(doc_options.keys()))
+                        selected_doc_ids = [doc_options[name] for name in selected_docs]
+                        
+                        if st.form_submit_button("提交生成任务"):
+                            if not ts_name or not selected_doc_ids:
+                                st.error("请填写名称并选择文档。")
+                            else:
+                                success, msg = create_testset(ts_name, selected_doc_ids)
+                                if success:
+                                    st.success(f"任务已提交 (ID: {msg})")
+                                    time.sleep(1)
+                                    st.rerun()
+                                else:
+                                    st.error(msg)
+            # B. 列表区
+            st.divider()
+            st.subheader("📚 已有测试集")
+            ts_list = get_testsets()
+            if ts_list:
+                for ts in ts_list:
+                    col1, col2, col3 = st.columns([3, 2, 1])
+                    with col1:
+                        st.markdown(f"**{ts['name']}** (ID: {ts['id']})")
+                        st.caption(f"路径: `{ts['file_path']}`")
+                    with col2:
+                        # [新增] 状态徽章
+                        status = ts.get('status', 'COMPLETED') # 兼容旧数据
+                        if status == 'COMPLETED':
+                            st.success("✅ 就绪")
+                        elif status == 'FAILED':
+                            st.error(f"❌ 失败: {ts.get('error_message')}")
+                        elif status == 'GENERATING':
+                            st.warning("⏳ 生成中...")
+                        else:
+                            st.info(status)
+                    with col3:
+                        st.caption(ts['created_at'][:10])
+                    st.divider()
+
+    # ----------- Tab 4: 设置 -----------
+    with tab4:
+        st.subheader("⚙️ 基本信息修改")
         with st.form("update_kb_form"):
             new_kb_name = st.text_input("名称", value=selected_kb['name'])
             new_kb_desc = st.text_input("描述", value=selected_kb['description'])
-            
             if st.form_submit_button("💾 保存修改"):
                 success, msg = update_knowledge(selected_kb['id'], new_kb_name, new_kb_desc)
                 if success:
@@ -279,25 +489,19 @@ if selected_kb:
                     st.rerun()
                 else:
                     st.error(f"修改失败: {msg}")
-        
         st.divider()
-        
         st.subheader("⚠️ 危险区域")
-        st.warning("删除知识库将连带删除其下所有文档和向量数据，不可恢复！")
-        
-        # 二次确认逻辑
         if "confirm_delete" not in st.session_state:
             st.session_state.confirm_delete = False
-
         if not st.session_state.confirm_delete:
             if st.button("🗑️ 删除此知识库", type="primary"):
                 st.session_state.confirm_delete = True
                 st.rerun()
         else:
-            st.error(f"你确定要删除 {selected_kb['name']} 吗？")
+            st.error(f"确定删除 {selected_kb['name']} 吗？")
             col_d1, col_d2 = st.columns(2)
             with col_d1:
-                if st.button("✅ 确认删除"):
+                if st.button("✅ 确认"):
                     success, msg = delete_knowledge(selected_kb['id'])
                     if success:
                         st.success(msg)
