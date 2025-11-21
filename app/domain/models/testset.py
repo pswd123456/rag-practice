@@ -12,6 +12,9 @@ class Testset(SQLModel, table=True):
 
     file_path: str = Field(description="MinIO path to the CSV")
     
+    status: str = Field(default="PENDING")
+    error_message: Optional[str] = Field(default=None)
+    
     created_at: datetime = Field(default_factory=datetime.now)
 
     experiments: List["Experiment"] = Relationship(back_populates="testset")
