@@ -1,3 +1,6 @@
+# app/main.py
+# version = "0.1.0"
+
 import logging
 import logging.config
 import os
