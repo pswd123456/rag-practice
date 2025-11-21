@@ -85,6 +85,20 @@ def get_testsets():
         pass
     return []
 
+def get_testset_status(ts_id):
+    """
+    [新增] 查询单个测试集的状态
+    """
+    try:
+        res = httpx.get(f"{API_BASE_URL}/evaluation/testsets/{ts_id}")
+        if res.status_code == 200:
+            return res.json().get("status")
+        elif res.status_code == 404:
+            return "NOT_FOUND"
+    except:
+        pass
+    return None
+
 def create_testset(name, doc_ids):
     try:
         res = httpx.post(f"{API_BASE_URL}/evaluation/testsets", json={
@@ -284,7 +298,6 @@ if selected_kb:
                             st.error("后台处理发生错误，请检查 Worker 日志。")
                             break
                         
-                        # [新增] 处理文档消失的情况
                         elif current_status == "NOT_FOUND":
                             status.update(label="⚠️ 文档丢失", state="error", expanded=True)
                             st.error(f"文档 {doc_id} 未找到，可能已被删除或数据库已重置。")
@@ -350,23 +363,29 @@ if selected_kb:
                         # [修改] 使用过滤后的列表
                         ts_options = {f"{ts['name']} (ID:{ts['id']})": ts['id'] for ts in ready_testsets}
                         selected_ts_name = st.selectbox("选择测试集", list(ts_options.keys()))
-                        # ... (后续代码不变)
-                        selected_ts_id = ts_options[selected_ts_name]
                         
+                        if selected_ts_name:
+                            selected_ts_id = ts_options[selected_ts_name]
+                        else:
+                             selected_ts_id = None
+
                         st.markdown("**运行时参数**")
                         exp_top_k = st.slider("Top K", 1, 10, 3)
                         exp_strategy = st.selectbox("检索策略", ["default", "hybrid", "rerank"])
                         exp_llm = st.selectbox("学生 LLM", ["qwen-flash", "qwen-turbo", "qwen-plus"])
                         
                         if st.form_submit_button("开始评估", type="primary"):
-                            params = {"top_k": exp_top_k, "strategy": exp_strategy, "llm": exp_llm}
-                            success, msg = run_experiment(selected_kb['id'], selected_ts_id, params)
-                            if success:
-                                st.toast("实验已提交后台运行！", icon="🏃")
-                                time.sleep(1)
-                                st.rerun()
+                            if selected_ts_id:
+                                params = {"top_k": exp_top_k, "strategy": exp_strategy, "llm": exp_llm}
+                                success, msg = run_experiment(selected_kb['id'], selected_ts_id, params)
+                                if success:
+                                    st.toast("实验已提交后台运行！", icon="🏃")
+                                    time.sleep(1)
+                                    st.rerun()
+                                else:
+                                    st.error(msg)
                             else:
-                                st.error(msg)
+                                st.error("请选择一个有效的测试集")
             
             with col_e2:
                 st.subheader("📈 历史实验记录")
@@ -446,9 +465,34 @@ if selected_kb:
                             else:
                                 success, msg = create_testset(ts_name, selected_doc_ids)
                                 if success:
-                                    st.success(f"任务已提交 (ID: {msg})")
-                                    time.sleep(1)
-                                    st.rerun()
+                                    # msg 是返回的 ID (字符串)
+                                    ts_id = msg
+                                    st.toast(f"任务已提交 (ID: {ts_id})，开始生成...", icon="🚀")
+                                    
+                                    # [新增] 轮询逻辑
+                                    with st.status("正在生成测试集 (这可能需要几分钟)...", expanded=True) as status:
+                                        while True:
+                                            ts_status = get_testset_status(ts_id)
+                                            
+                                            if ts_status == "COMPLETED":
+                                                status.update(label="✅ 生成完成！", state="complete", expanded=False)
+                                                st.success(f"测试集 {ts_name} 生成成功！")
+                                                time.sleep(1)
+                                                st.rerun()
+                                                break
+                                            
+                                            elif ts_status == "FAILED":
+                                                status.update(label="❌ 生成失败", state="error", expanded=True)
+                                                st.error("后台任务失败，请查看列表中的错误详情。")
+                                                break
+                                            
+                                            elif ts_status == "NOT_FOUND":
+                                                status.update(label="⚠️ 未找到", state="error", expanded=True)
+                                                st.error("测试集ID未找到。")
+                                                break
+                                            
+                                            # 还在 GENERATING，等待 2s
+                                            time.sleep(2)
                                 else:
                                     st.error(msg)
             # B. 列表区

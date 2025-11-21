@@ -65,6 +65,19 @@ async def create_generation_task(
 def get_testsets(db: Session = Depends(deps.get_db_session)):
     return db.exec(select(Testset).order_by(desc(Testset.created_at))).all()
 
+@router.get("/testsets/{testset_id}", response_model=Testset)
+def get_testset(
+    testset_id: int,
+    db: Session = Depends(deps.get_db_session)
+):
+    """
+    [新增] 获取单个测试集详情，用于前端轮询状态
+    """
+    ts = db.get(Testset, testset_id)
+    if not ts:
+        raise HTTPException(status_code=404, detail="Testset not found")
+    return ts
+
 # -------------------------------------------------------
 # 2. Experiment 管理
 # -------------------------------------------------------
