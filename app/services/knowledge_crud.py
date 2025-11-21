@@ -84,6 +84,15 @@ def delete_knowledge_pipeline(db: Session, knowledge_id: int):
             logger.error(f"删除文档 {doc.id} 失败: {e}", exc_info=True)
             # 继续删下一个，不要因为一个失败就中断整个流程
 
+    # 重新查询 DB，确认此知识库下是否还有文档残留
+    remaining_docs = db.exec(select(Document).where(Document.knowledge_base_id == knowledge_id)).all()
+
+    if len(remaining_docs) > 0:
+        logger.error(f"级联删除中止：知识库 {knowledge_id} 仍有 {len(remaining_docs)} 个文档未被清除。")
+        logger.error("可能原因：数据库锁定或严重逻辑错误。知识库将保留以便排查。")
+        # 这里直接返回，知识库状态会保持在 "DELETING"，这是合理的，提示管理员介入
+        return
+
     # 3. 删除知识库本身
     try:
         db.delete(knowledge)
