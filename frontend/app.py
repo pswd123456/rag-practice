@@ -5,6 +5,7 @@ from datetime import datetime
 import time
 import matplotlib.pyplot as plt
 import numpy as np
+import json
 
 API_BASE_URL = "http://api:8000" # Docker 内部通信用服务名，如果你在宿主机跑 Streamlit 改为 localhost:8000
 
@@ -283,7 +284,10 @@ if selected_kb:
                 if "sources" in msg and msg["sources"]:
                     with st.expander(f"📚 参考了 {len(msg['sources'])} 个切片"):
                         for idx, src in enumerate(msg["sources"]):
-                            st.markdown(f"**[{idx+1}] {src['source_filename']}**")
+                            # 历史消息渲染时也加上页码逻辑
+                            page_num = src.get("page_number")
+                            page_info = f" (P{page_num})" if page_num else ""
+                            st.markdown(f"**[{idx+1}] {src['source_filename']}{page_info}**")
                             st.caption(src['chunk_content'])
 
         # 2. 处理用户输入
@@ -366,7 +370,10 @@ if selected_kb:
                 if retrieved_sources:
                     with st.expander(f"📚 参考了 {len(retrieved_sources)} 个切片"):
                         for idx, src in enumerate(retrieved_sources):
-                            st.markdown(f"**[{idx+1}] {src['source_filename']}**")
+                            # [修复] 增加页码显示
+                            page_num = src.get("page_number")
+                            page_info = f" (P{page_num})" if page_num else ""
+                            st.markdown(f"**[{idx+1}] {src['source_filename']}{page_info}**")
                             st.caption(src['chunk_content'])
                 
                 # 更新 Session State (不自动 Rerun，等待下一次交互)
