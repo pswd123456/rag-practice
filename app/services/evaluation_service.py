@@ -25,7 +25,7 @@ from app.services.loader import load_single_document, normalize_metadata
 from app.services.retrieval import VectorStoreManager, RetrievalService
 from app.services.pipelines import RAGPipeline
 from app.services.generation import QAService
-from app.services.ingest.processor import minio_client # 复用一下下载逻辑或直接用 file_storage
+from app.services.file_storage import get_minio_client, save_bytes_to_minio, get_file_from_minio
 import tempfile
 from pathlib import Path
 
@@ -59,6 +59,8 @@ def generate_testset_pipeline(db: Session, testset_id: int, source_doc_ids: List
         db.commit()
         # 1. 加载源文档 (从 MinIO 下载 -> LangChain Document)
         langchain_docs = []
+        minio_client = get_minio_client()
+        
         for doc_id in source_doc_ids:
             db_doc = db.get(DBDocument, doc_id)
             if not db_doc: 

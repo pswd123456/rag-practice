@@ -11,16 +11,9 @@ from app.domain.models import Document, DocStatus, Chunk, Knowledge
 from app.services.loader import load_single_document, split_docs, normalize_metadata
 from app.services.factories import setup_embed_model
 from app.services.retrieval import setup_vector_store
+from app.services.file_storage import get_minio_client
 
 logger = logging.getLogger(__name__)
-
-# 这里的 MinIO 客户端可以由外部传入，或者在这里初始化单例
-minio_client = Minio(
-    settings.MINIO_ENDPOINT,
-    access_key=settings.MINIO_ACCESS_KEY,
-    secret_key=settings.MINIO_SECRET_KEY,
-    secure=settings.MINIO_SECURE
-)
 
 def process_document_pipeline(db: Session, doc_id: int):
     """
@@ -58,6 +51,7 @@ def process_document_pipeline(db: Session, doc_id: int):
     temp_file_path = None
     try:
         # 2. 从 MinIO 下载文件
+        minio_client = get_minio_client()
         file_object_name = doc.file_path 
         original_suffix = Path(doc.filename).suffix
 
