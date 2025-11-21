@@ -106,14 +106,6 @@ def handle_get_knowledge_documents(
     )
     return db.exec(statement).all()
 
-# ------------------- Vector Store ------------------
-
-@router.get("/vector-store/stats")
-def vector_store_stats(
-    manager: VectorStoreManager = Depends(deps.get_vector_store_manager),
-):
-    return manager.stats()
-
 # ------------------- Document management ------------------
 
 @router.post("/{knowledge_id}/upload", response_model=int)

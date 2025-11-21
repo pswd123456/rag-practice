@@ -10,7 +10,7 @@ from app.services.factories import setup_embed_model, setup_qwen_llm
 from app.services.generation import QAService
 from app.services.pipelines import RAGPipeline
 from app.services.retrieval import RetrievalService, VectorStoreManager
-
+from app.domain.models import Knowledge
 # ---- Settings & DB ----
 
 #用于测试override settings, 正常来说config.py会生成一个唯一单例的settings对象
@@ -37,55 +37,55 @@ def _get_embed_model():
 def _get_llm():
     return setup_qwen_llm("qwen-flash")
 
-
-@lru_cache(maxsize=1)
-def _get_vector_store_manager() -> VectorStoreManager:
-    manager = VectorStoreManager(
-        collection_name=settings.CHROMADB_COLLECTION_NAME,
-        embed_model=_get_embed_model(),
-        default_top_k=settings.TOP_K,
-    )
-    manager.ensure_collection()
-    return manager
-
-
-def get_vector_store_manager() -> VectorStoreManager:
-    return _get_vector_store_manager()
-
-
 @lru_cache(maxsize=1)
 def _get_qa_service() -> QAService:
     return QAService(_get_llm())
 
-
-# unused
-def get_retrieval_service(
-    manager: VectorStoreManager = Depends(get_vector_store_manager),
-) -> RetrievalService:
-    retriever = manager.as_retriever()
-    return RetrievalService(retriever)
-
 def get_rag_pipeline_factory(
-    manager: VectorStoreManager = Depends(get_vector_store_manager),
+    db: Session = Depends(get_session), # <--- [新增] 注入 DB Session
     qa_service: QAService = Depends(_get_qa_service)
 ):
     """
-    返回一个闭包/函数，前端路由调用这个函数来创建 Pipeline。
-    deps 只负责把 manager 和 qa_service 这两个原料递进去。
+    工厂函数：根据 knowledge_id 动态构建 Pipeline
     """
     def create_pipeline(knowledge_id: Optional[int], 
                         top_k: int = settings.TOP_K,
                         strategy: str = "default"
                         ):
-        # ✅ 逻辑下沉到了 domain 层，deps 这里只是简单的透传调用
+        
+        # === 🚀 [修复] 动态连接正确的向量集合 ===
+        if knowledge_id:
+            # 1. 查库获取配置
+            knowledge = db.get(Knowledge, knowledge_id)
+            if not knowledge:
+                raise ValueError(f"Knowledge Base {knowledge_id} not found")
+            
+            # 2. 构造对应的 Manager
+            collection_name = f"kb_{knowledge.id}"
+            embed_model = setup_embed_model(knowledge.embed_model)
+            
+            manager = VectorStoreManager(
+                collection_name=collection_name,
+                embed_model=embed_model,
+                default_top_k=top_k
+            )
+            # 确保连接（但不自动填充）
+            manager.ensure_collection()
+            
+        else:
+            # 兜底逻辑（比如不选知识库时的纯闲聊，或者旧逻辑）
+            # 这里的行为取决于你的业务定义，暂时可以用默认配置
+            embed_model = setup_embed_model("text-embedding-v4")
+            manager = VectorStoreManager(settings.CHROMADB_COLLECTION_NAME, embed_model)
+
+        # 3. 构建 Pipeline
         return RAGPipeline.build(
             store_manager=manager,
             qa_service=qa_service,
-            knowledge_id=knowledge_id,
+            knowledge_id=knowledge_id, # 这个参数传进去主要用于 filter，但在分库架构下其实 filter 作用变弱了
             top_k=top_k,
             strategy=strategy
         )
         
     return create_pipeline
-
 
