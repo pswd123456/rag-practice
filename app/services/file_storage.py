@@ -54,6 +54,47 @@ def save_upload_file(upload_file: UploadFile, knowledge_id: int) -> str:
     # 返回 MinIO 中的 Key，这将被存入数据库的 file_path 字段
     return object_name
 
+def save_bytes_to_minio(data: bytes, object_name: str, content_type: str = "application/octet-stream"):
+    """
+    将内存中的字节数据保存到 MinIO 中, 用于测试集存取
+    """
+    try:
+        if not minio_client.bucket_exists(settings.MINIO_BUCKET_NAME):
+            minio_client.make_bucket(settings.MINIO_BUCKET_NAME)
+        
+        data_stream = io.BytesIO(data)
+        length = len(data)
+
+        logger.info(f"Saving {object_name} to MinIO(Size :{length})")
+        minio_client.put_object(
+            bucket_name=settings.MINIO_BUCKET_NAME,
+            object_name=object_name,
+            data=data_stream,
+            length=length,
+            content_type=content_type
+        )
+        return object_name
+    except Exception as e:
+        logger.error(f"上传文件到 MinIO 失败: {e}", exc_info=True)
+        raise e
+
+def get_file_from_minio(object_name: str) -> bytes:
+    """
+    从 MinIO 读取文件内容到内存, 主要用于测试集存取
+    """
+    try:
+        response = minio_client.get_object(
+            settings.MINIO_BUCKET_NAME,
+            object_name
+        )
+        return response.read()
+    except Exception as e:
+        logger.error(f"从 MinIO 读取文件失败: {e}", exc_info=True)
+        raise e
+    finally:
+        if 'response' in locals():
+            response.close()
+
 def delete_file_from_minio(object_name: str):
     """
     从 MinIO 中删除指定对象
