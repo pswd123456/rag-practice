@@ -29,7 +29,7 @@ class Document(SQLModel, table=True):
     error_message: Optional[str] = Field(default=None)
 
     # 关于文档的信息, 比如页数和作者, 使用JSON 存储
-    meta_info: Optional[Dict[str, Any]] = Field(default={}, sa_column=Column(JSON))
+    meta_info: Optional[Dict[str, Any]] = Field(default=dict, sa_column=Column(JSON))
 
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)

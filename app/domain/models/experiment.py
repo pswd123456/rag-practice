@@ -15,7 +15,7 @@ class Experiment(SQLModel, table=True):
     testset_id: int = Field(foreign_key="testset.id")
     
     # 运行时参数
-    runtime_params: Dict[str, Any] = Field(default={}, sa_column=Column(JSON))
+    runtime_params: Dict[str, Any] = Field(default=dict, sa_column=Column(JSON))
     
     # === 🛑 核心补全：确保这几个分数字段都在！ ===
     faithfulness: float = Field(default=0.0)
