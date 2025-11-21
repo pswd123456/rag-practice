@@ -1,5 +1,6 @@
 import pytest
 import asyncio
+import time
 # 1. 测试最基本的对话 (不带 knowledge_id)
 @pytest.mark.asyncio
 async def test_chat_simple(client):
@@ -23,15 +24,39 @@ async def test_chat_with_knowledge(client, temp_kb):
     # A. 上传文件
     content = b"DeepSeek is a powerful LLM developed by High-Flyer."
     files = {"file": ("deepseek_intro.txt", content, "text/plain")}
-    await client.post(f"/knowledge/{kb_id}/upload", files=files)
     
-    # 🛠️ [关键修改] 增加等待时间
-    # 给 Worker 留出处理时间 (MinIO下载+解析+Embedding+入库)
-    # 根据你的电脑性能，3-5秒通常足够处理这个小文本
-    print(">>> 等待 Worker 处理文档...")
-    await asyncio.sleep(3) 
+    # 1. 捕获上传响应，获取 doc_id
+    upload_res = await client.post(f"/knowledge/{kb_id}/upload", files=files)
+    assert upload_res.status_code == 200
+    doc_id = upload_res.json() # 假设 API 返回的是 int 类型的 doc_id
 
-    # B. 测试默认策略 (现在应该能查到了)
+    # 2. 🛠️ [核心修复] 轮询等待文档状态变为 COMPLETED
+    # 设置最大超时时间 (比如 20秒)，避免死循环
+    max_retries = 20
+    is_processed = False
+    
+    print(f">>> 开始轮询文档 {doc_id} 状态...")
+    for _ in range(max_retries):
+        # 调用你在 knowledge.py 里写的 GET /knowledge/documents/{doc_id} 接口
+        doc_res = await client.get(f"/knowledge/documents/{doc_id}")
+        assert doc_res.status_code == 200
+        
+        status = doc_res.json()["status"]
+        print(f"Current Status: {status}")
+        
+        if status == "COMPLETED":
+            is_processed = True
+            break
+        elif status == "FAILED":
+            pytest.fail(f"文档处理失败: {doc_res.json().get('error_message')}")
+        
+        # 没完成就等 1 秒再查
+        await asyncio.sleep(1)
+
+    if not is_processed:
+        pytest.fail("测试失败：文档处理超时 (Wait > 20s)")
+
+    # B. 测试默认策略
     res_default = await client.post("/chat/query", json={
         "query": "What is DeepSeek?",
         "knowledge_id": kb_id,
@@ -40,7 +65,12 @@ async def test_chat_with_knowledge(client, temp_kb):
 
     assert res_default.status_code == 200
     ans_default = res_default.json()
-    assert len(ans_default["sources"]) > 0 # 应该能搜到刚才传的文件
+    
+    # 调试输出：如果失败了，打印出到底返回了什么
+    if len(ans_default["sources"]) == 0:
+        print(f"Debug Response: {ans_default}")
+
+    assert len(ans_default["sources"]) > 0
     assert "DeepSeek" in ans_default["sources"][0]["chunk_content"]
 
     # C. 测试 A/B 策略开关 (验证代码路径是否通畅)
