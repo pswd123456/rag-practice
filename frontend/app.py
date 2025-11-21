@@ -284,7 +284,6 @@ if selected_kb:
                 if "sources" in msg and msg["sources"]:
                     with st.expander(f"📚 参考了 {len(msg['sources'])} 个切片"):
                         for idx, src in enumerate(msg["sources"]):
-                            # 历史消息渲染时也加上页码逻辑
                             page_num = src.get("page_number")
                             page_info = f" (P{page_num})" if page_num else ""
                             st.markdown(f"**[{idx+1}] {src['source_filename']}{page_info}**")
@@ -335,7 +334,16 @@ if selected_kb:
                                                 except: pass
                                             
                                             elif current_event == "message":
-                                                full_response += data_content
+                                                # [修改] 尝试解析 JSON token
+                                                try:
+                                                    # 如果后端发的是 JSON 字符串 " token"
+                                                    token = json.loads(data_content)
+                                                    full_response += token
+                                                except json.JSONDecodeError:
+                                                    # 兼容旧后端或非 JSON 数据，回退到直接拼接
+                                                    # 但此时因为 strip() 已经去掉了空格，可能还是有粘连
+                                                    full_response += data_content
+                                                
                                                 # 实时更新占位符
                                                 message_placeholder.markdown(full_response + "▌")
                                     
@@ -370,7 +378,6 @@ if selected_kb:
                 if retrieved_sources:
                     with st.expander(f"📚 参考了 {len(retrieved_sources)} 个切片"):
                         for idx, src in enumerate(retrieved_sources):
-                            # [修复] 增加页码显示
                             page_num = src.get("page_number")
                             page_info = f" (P{page_num})" if page_num else ""
                             st.markdown(f"**[{idx+1}] {src['source_filename']}{page_info}**")

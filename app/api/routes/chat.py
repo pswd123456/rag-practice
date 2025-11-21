@@ -63,7 +63,7 @@ async def stream_query(
     SSE (Server-Sent Events) 流式返回。
     事件流顺序:
     1. event: sources \n data: [JSON List of Sources]
-    2. event: message \n data: [Token String]
+    2. event: message \n data: "Token String"  <-- 修改点：使用 JSON 字符串
     ...
     """
     rag_chain = pipeline_factory(
@@ -75,7 +75,6 @@ async def stream_query(
     async def event_generator():
         logger.debug(f"收到 Stream API 查询: {request.query}")        
         
-        # 🔴 修复点：使用新的 astream_with_sources 方法
         # 迭代器会先返回 List[Document]，然后返回 str (token)
         async for chunk in rag_chain.astream_with_sources(request.query):
             
@@ -98,11 +97,7 @@ async def stream_query(
             
             # 如果是字符串，构造 message 事件 (或者直接 data)
             elif isinstance(chunk, str):
-                # 简单的 SSE 格式：data: <content>\n\n
-                # 为了前端解析方便，这里将 token 包装在 json 中，或者直接发纯文本
-                # 这里演示直接发纯文本 Token，前端累加即可
-                # 注意：SSE 中 data 内容如果包含换行需特殊处理，这里简化处理
-                yield f"event: message\ndata: {chunk}\n\n"
+                # [修改] 使用 json.dumps 包装 chunk，保护空格和特殊字符
+                yield f"event: message\ndata: {json.dumps(chunk)}\n\n"
     
-    # 🔴 修复点：Content-Type 必须是 text/event-stream
     return StreamingResponse(event_generator(), media_type="text/event-stream")
