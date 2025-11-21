@@ -5,7 +5,7 @@ RAG 管道模块 (pipeline.py)
 负责定义和创建 RAG (Retrieval-Augmented Generation) 链。
 """
 import logging
-from typing import List, Optional
+from typing import AsyncGenerator, List, Optional, Union
 
 from langchain_core.documents import Document
 from langchain_core.runnables import RunnablePassthrough, RunnableLambda
@@ -109,9 +109,24 @@ class RAGPipeline:
         async for chunk in self.rag_chain.astream(query):
             yield chunk
 
-    # def get_rag_chain(self):
-    #     return self.rag_chain
-
+    async def astream_with_sources(self, query: str) -> AsyncGenerator[Union[List[Document], str], None]:
+        """
+        流式生成：先 Yield 检索到的文档列表，再 Yield 生成的 Token。
+        """
+        # 1. 执行检索
+        docs = await self.retrieval_service.afetch(query)
+        # 2. 首先 Yield 文档 (List[Document])
+        yield docs
+        
+        # 3. 格式化上下文
+        context = self._format_docs(docs)
+        
+        # 4. 构造 Chain 的输入并流式调用
+        # generation_chain 期望输入为 Dict {"question": ..., "context": ...}
+        payload = {"question": query, "context": context}
+        
+        async for token in self.generation_chain.astream(payload):
+            yield token
     def get_retrieval_service(self) -> RetrievalService:
         return self.retrieval_service
 

@@ -267,6 +267,7 @@ if selected_kb:
         col_s1, col_s2 = st.columns([1, 4])
         with col_s1:
             strategy = st.selectbox("检索策略", ["default", "dense_only", "hybrid", "rerank"])
+            use_stream = st.checkbox("流式输出", value=True)
         
         if "messages" not in st.session_state:
             st.session_state.messages = []
@@ -275,6 +276,7 @@ if selected_kb:
             st.session_state.messages = []
             st.rerun()
 
+        # 1. 渲染历史消息
         for msg in st.session_state.messages:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
@@ -284,38 +286,96 @@ if selected_kb:
                             st.markdown(f"**[{idx+1}] {src['source_filename']}**")
                             st.caption(src['chunk_content'])
 
+        # 2. 处理用户输入
         if prompt := st.chat_input("在这个知识库中搜索..."):
+            # 显示用户消息
             st.session_state.messages.append({"role": "user", "content": prompt})
             with st.chat_message("user"):
                 st.markdown(prompt)
 
+            # 显示助手响应
             with st.chat_message("assistant"):
-                with st.spinner("思考中..."):
+                payload = {
+                    "query": prompt,
+                    "knowledge_id": selected_kb['id'],
+                    "strategy": strategy
+                }
+                
+                full_response = ""
+                retrieved_sources = []
+
+                # ================= A. 流式模式 =================
+                if use_stream:
+                    # 仅在流式模式下创建占位符
+                    message_placeholder = st.empty()
+                    
                     try:
-                        payload = {
-                            "query": prompt,
-                            "knowledge_id": selected_kb['id'],
-                            "strategy": strategy
-                        }
-                        res = httpx.post(f"{API_BASE_URL}/chat/query", json=payload, timeout=60.0)
-                        if res.status_code == 200:
-                            data = res.json()
-                            st.markdown(data["answer"])
-                            if data["sources"]:
-                                with st.expander(f"📚 参考了 {len(data['sources'])} 个切片"):
-                                    for idx, src in enumerate(data['sources']):
-                                        st.markdown(f"**[{idx+1}] {src['source_filename']}**")
-                                        st.caption(src['chunk_content'])
-                            
-                            st.session_state.messages.append({
-                                "role": "assistant",
-                                "content": data["answer"],
-                                "sources": data["sources"]
-                            })
-                        else:
-                            st.error(res.text)
+                        with httpx.Client(timeout=60.0) as client:
+                            with client.stream("POST", f"{API_BASE_URL}/chat/stream", json=payload) as response:
+                                if response.status_code != 200:
+                                    message_placeholder.error(f"Stream Error: {response.status_code}")
+                                    full_response = "Error"
+                                else:
+                                    current_event = None
+                                    for line in response.iter_lines():
+                                        if not line: continue
+                                        
+                                        if line.startswith("event:"):
+                                            current_event = line[6:].strip()
+                                        elif line.startswith("data:"):
+                                            data_content = line[5:].strip()
+                                            
+                                            if current_event == "sources":
+                                                try:
+                                                    retrieved_sources = json.loads(data_content)
+                                                except: pass
+                                            
+                                            elif current_event == "message":
+                                                full_response += data_content
+                                                # 实时更新占位符
+                                                message_placeholder.markdown(full_response + "▌")
+                                    
+                                    # 循环结束，用最终结果覆盖占位符 (移除光标)
+                                    message_placeholder.markdown(full_response)
+
                     except Exception as e:
-                        st.error(str(e))
+                        message_placeholder.error(f"Connection Error: {str(e)}")
+                        full_response = str(e)
+
+                # ================= B. 普通模式 =================
+                else:
+                    # 普通模式下完全不创建 st.empty()，直接显示 Spinner 和 Markdown
+                    with st.spinner("思考中..."):
+                        try:
+                            res = httpx.post(f"{API_BASE_URL}/chat/query", json=payload, timeout=60.0)
+                            if res.status_code == 200:
+                                data = res.json()
+                                full_response = data["answer"]
+                                retrieved_sources = data["sources"]
+                                # 直接输出结果
+                                st.markdown(full_response)
+                            else:
+                                st.error(res.text)
+                                full_response = "Error"
+                        except Exception as e:
+                            st.error(str(e))
+                            full_response = str(e)
+
+                # ================= 公共逻辑：显示来源 =================
+                # 无论哪种模式，来源都在文本下方显示
+                if retrieved_sources:
+                    with st.expander(f"📚 参考了 {len(retrieved_sources)} 个切片"):
+                        for idx, src in enumerate(retrieved_sources):
+                            st.markdown(f"**[{idx+1}] {src['source_filename']}**")
+                            st.caption(src['chunk_content'])
+                
+                # 更新 Session State (不自动 Rerun，等待下一次交互)
+                if full_response and full_response != "Error":
+                    st.session_state.messages.append({
+                        "role": "assistant",
+                        "content": full_response,
+                        "sources": retrieved_sources
+                    })
 
     # ----------- Tab 2: 文档管理 -----------
     with tab2:

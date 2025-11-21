@@ -1,3 +1,4 @@
+import json
 import logging
 
 from fastapi import APIRouter, Depends
@@ -53,13 +54,17 @@ async def handle_query(
     )
 
 
-@router.post("/stream", response_model=QueryResponse)
+@router.post("/stream")
 async def stream_query(
     request: QueryRequest,
     pipeline_factory = Depends(get_rag_pipeline_factory),
 ):
     """
-    以流式方式返回回答，便于前端逐步渲染。
+    SSE (Server-Sent Events) 流式返回。
+    事件流顺序:
+    1. event: sources \n data: [JSON List of Sources]
+    2. event: message \n data: [Token String]
+    ...
     """
     rag_chain = pipeline_factory(
         knowledge_id=request.knowledge_id,
@@ -68,12 +73,36 @@ async def stream_query(
     )
     
     async def event_generator():
-        """
-        生成事件，每个事件包含一个回答片段。
-        """
-        logger.debug(f"收到 API 查询: {request.query}")        
+        logger.debug(f"收到 Stream API 查询: {request.query}")        
+        
+        # 🔴 修复点：使用新的 astream_with_sources 方法
+        # 迭代器会先返回 List[Document]，然后返回 str (token)
+        async for chunk in rag_chain.astream_with_sources(request.query):
             
-        async for token in rag_chain.astream_answer(request.query):
-            yield token
+            # 如果是文档列表，构造 sources 事件
+            if isinstance(chunk, list):
+                sources_data = []
+                for doc in chunk:
+                    metadata = doc.metadata
+                    src = Source(
+                        source_filename=metadata.get("source", "未知文件"),
+                        page_number=metadata.get("page"),
+                        chunk_content=doc.page_content,
+                        chunk_id=str(metadata.get("doc_id"))
+                    )
+                    # Pydantic model_dump 需要 mode='json' 来处理一些特殊类型
+                    sources_data.append(src.model_dump(mode='json'))
+                
+                # 发送 sources 事件
+                yield f"event: sources\ndata: {json.dumps(sources_data, ensure_ascii=False)}\n\n"
+            
+            # 如果是字符串，构造 message 事件 (或者直接 data)
+            elif isinstance(chunk, str):
+                # 简单的 SSE 格式：data: <content>\n\n
+                # 为了前端解析方便，这里将 token 包装在 json 中，或者直接发纯文本
+                # 这里演示直接发纯文本 Token，前端累加即可
+                # 注意：SSE 中 data 内容如果包含换行需特殊处理，这里简化处理
+                yield f"event: message\ndata: {chunk}\n\n"
     
-    return StreamingResponse(event_generator(), media_type="text/plain")
+    # 🔴 修复点：Content-Type 必须是 text/event-stream
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
