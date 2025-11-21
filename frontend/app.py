@@ -412,7 +412,8 @@ if selected_kb:
                              selected_ts_id = None
 
                         st.markdown("**运行时参数**")
-                        exp_top_k = st.slider("Top K", 1, 10, 3)
+                        # [修改] 替换 slider 为 number_input
+                        exp_top_k = st.number_input("Top K", min_value=1, max_value=50, value=3, step=1)
                         exp_strategy = st.selectbox("检索策略", ["default", "hybrid", "rerank"])
                         exp_llm = st.selectbox("学生 LLM", ["qwen-flash", "qwen-turbo", "qwen-plus"])
                         
