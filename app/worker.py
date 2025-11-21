@@ -3,6 +3,7 @@ import asyncio
 from typing import Any, List
 import logging
 import logging.config
+from datetime import datetime
 
 from arq import create_pool
 from arq.connections import RedisSettings
@@ -59,17 +60,36 @@ def _sync_run_experiment_wrapper(experiment_id: int):
         except Exception as e:
             logger.error(f"[Worker] 实验执行异常: {e}", exc_info=True)
 
+# ----- Worker -----
+
 async def process_document_task(ctx: Any, doc_id: int):
     await asyncio.to_thread(_sync_process_wrapper, doc_id)
+
+# 配置重试：处理文档可能因为网络波动（MinIO/API）失败
+# 5秒重试间隔，最多3次
+process_document_task.max_tries = 3 # type: ignore
+process_document_task.retry_delay = 5 # type: ignore
 
 async def delete_knowledge_task(ctx: Any, knowledge_id: int):
     await asyncio.to_thread(_sync_delete_knowledge_wrapper, knowledge_id)
 
+# 配置重试：删除操作通常较快，给予少量重试机会
+delete_knowledge_task.max_tries = 3 # type: ignore
+delete_knowledge_task.retry_delay = 2 # type: ignore
+
 async def generate_testset_task(ctx: Any, testset_id: int, source_doc_ids: List[int]):
     await asyncio.to_thread(_sync_generate_testset_wrapper, testset_id, source_doc_ids)
 
+# 配置重试：涉及 LLM 生成，可能触发限流 (Rate Limit)，设置较长延迟
+generate_testset_task.max_tries = 3 # type: ignore
+generate_testset_task.retry_delay = 10 # type: ignore
+
 async def run_experiment_task(ctx: Any, experiment_id: int):
     await asyncio.to_thread(_sync_run_experiment_wrapper, experiment_id)
+
+# 配置重试：涉及大量 LLM 交互，同样设置较长延迟
+run_experiment_task.max_tries = 3 # type: ignore
+run_experiment_task.retry_delay = 10 # type: ignore
 # --- Arq 配置 ---
 
 class WorkerSettings:
