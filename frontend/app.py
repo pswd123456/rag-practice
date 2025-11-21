@@ -3,6 +3,8 @@ import httpx
 import pandas as pd
 from datetime import datetime
 import time
+import matplotlib.pyplot as plt
+import numpy as np
 
 API_BASE_URL = "http://api:8000" # Docker 内部通信用服务名，如果你在宿主机跑 Streamlit 改为 localhost:8000
 
@@ -19,6 +21,32 @@ except:
 st.set_page_config(page_title="RAG 知识库管理台", layout="wide", page_icon="🗂️")
 
 st.title("🗂️ RAG Practice 综合管理台")
+
+# ================== 辅助绘图函数 ==================
+def plot_radar_chart(metrics_dict):
+    """
+    绘制 RAGAS 指标雷达图
+    metrics_dict: {'Faithfulness': 0.8, 'Relevancy': 0.7, ...}
+    """
+    # 准备数据
+    labels = list(metrics_dict.keys())
+    stats = list(metrics_dict.values())
+    
+    # 闭合圆环
+    stats = np.concatenate((stats,[stats[0]]))
+    angles = np.linspace(0, 2*np.pi, len(labels), endpoint=False)
+    angles = np.concatenate((angles,[angles[0]]))
+
+    fig, ax = plt.subplots(figsize=(4, 4), subplot_kw=dict(polar=True))
+    ax.fill(angles, stats, color='skyblue', alpha=0.25)
+    ax.plot(angles, stats, color='skyblue', linewidth=2)
+    
+    ax.set_yticklabels([])
+    ax.set_xticks(angles[:-1])
+    ax.set_xticklabels(labels, size=10)
+    ax.set_ylim(0, 1)
+    plt.title("Ragas Metrics", size=12, y=1.1)
+    return fig
 
 # ================== 核心逻辑函数 ==================
 def get_knowledges():
@@ -121,6 +149,16 @@ def get_experiments(kb_id):
         pass
     return []
 
+def get_experiment_detail(exp_id):
+    """[新增] 获取实验详情"""
+    try:
+        res = httpx.get(f"{API_BASE_URL}/evaluation/experiments/{exp_id}")
+        if res.status_code == 200:
+            return res.json()
+    except:
+        pass
+    return None
+
 def run_experiment(kb_id, testset_id, params):
     try:
         payload = {
@@ -129,7 +167,11 @@ def run_experiment(kb_id, testset_id, params):
             "runtime_params": params
         }
         res = httpx.post(f"{API_BASE_URL}/evaluation/experiments", json=payload, timeout=10.0)
-        return res.status_code == 200, res.text
+        # [修改] 成功时返回 (True, experiment_id)，失败返回 (False, error_msg)
+        if res.status_code == 200:
+            return True, res.json() # 这里直接返回 ID (int)
+        else:
+            return False, res.text
     except Exception as e:
         return False, str(e)
 
@@ -377,13 +419,75 @@ if selected_kb:
                         if st.form_submit_button("开始评估", type="primary"):
                             if selected_ts_id:
                                 params = {"top_k": exp_top_k, "strategy": exp_strategy, "llm": exp_llm}
-                                success, msg = run_experiment(selected_kb['id'], selected_ts_id, params)
+                                success, result = run_experiment(selected_kb['id'], selected_ts_id, params)
+                                
                                 if success:
-                                    st.toast("实验已提交后台运行！", icon="🏃")
-                                    time.sleep(1)
-                                    st.rerun()
+                                    exp_id = result # result 是 ID
+                                    st.toast(f"实验已提交 (ID: {exp_id})，开始运行...", icon="🏃")
+                                    
+                                    # --- 实时进度可视化 ---
+                                    with st.status("🧪 正在运行评估 (这可能需要几分钟)...", expanded=True) as status:
+                                        st.write("🚀 初始化实验环境...")
+                                        # [Fix] 创建一个空的占位符用于后续更新状态文本
+                                        status_placeholder = st.empty()
+                                        time.sleep(1)
+                                        
+                                        while True:
+                                            exp_data = get_experiment_detail(exp_id)
+                                            if not exp_data:
+                                                status_placeholder.error("无法获取实验详情。")
+                                                break
+                                                
+                                            exp_status = exp_data.get("status")
+                                            
+                                            if exp_status == "COMPLETED":
+                                                # [Fix] 完成时清空进度文本
+                                                status_placeholder.empty()
+                                                status.update(label="✅ 评估完成！", state="complete", expanded=False)
+                                                
+                                                # === 核心：立即绘制雷达图 ===
+                                                st.success("评估成功！结果如下：")
+                                                
+                                                # 准备指标数据
+                                                metrics = {
+                                                    "Faithfulness": exp_data.get("faithfulness", 0),
+                                                    "Relevancy": exp_data.get("answer_relevancy", 0),
+                                                    "Recall": exp_data.get("context_recall", 0),
+                                                    "Precision": exp_data.get("context_precision", 0)
+                                                }
+                                                
+                                                # 使用 Matplotlib 绘制
+                                                fig = plot_radar_chart(metrics)
+                                                st.pyplot(fig, use_container_width=False)
+                                                
+                                                # 显示数值
+                                                c_m1, c_m2, c_m3, c_m4 = st.columns(4)
+                                                c_m1.metric("Faithfulness", f"{metrics['Faithfulness']:.3f}")
+                                                c_m2.metric("Relevancy", f"{metrics['Relevancy']:.3f}")
+                                                c_m3.metric("Recall", f"{metrics['Recall']:.3f}")
+                                                c_m4.metric("Precision", f"{metrics['Precision']:.3f}")
+                                                
+                                                st.caption("提示：点击下方的刷新列表可将其归档。")
+                                                break
+                                            
+                                            elif exp_status == "FAILED":
+                                                # [Fix] 失败时清空进度文本
+                                                status_placeholder.empty()
+                                                status.update(label="❌ 评估失败", state="error", expanded=True)
+                                                st.error(f"错误详情: {exp_data.get('error_message')}")
+                                                break
+                                            
+                                            elif exp_status == "RUNNING":
+                                                # [Fix] 使用 markdown 更新占位符，而不是 write 追加
+                                                status_placeholder.markdown("🔄 正在生成回答并计算指标 (Ragas)...")
+                                            
+                                            elif exp_status == "PENDING":
+                                                # [Fix] 使用 markdown 更新占位符
+                                                status_placeholder.markdown("⏳ 正在排队中...")
+                                            
+                                            time.sleep(3) # 轮询间隔
                                 else:
-                                    st.error(msg)
+                                    st.error(result)
                             else:
                                 st.error("请选择一个有效的测试集")
             

@@ -135,3 +135,16 @@ def get_experiments(
     
     query = query.order_by(desc(Experiment.created_at))
     return db.exec(query).all()
+
+@router.get("/experiments/{experiment_id}", response_model=Experiment)
+def get_experiment(
+    experiment_id: int,
+    db: Session = Depends(deps.get_db_session)
+):
+    """
+    获取单个实验详情，用于前端轮询
+    """
+    exp = db.get(Experiment, experiment_id)
+    if not exp:
+        raise HTTPException(status_code=404, detail="Experiment not found")
+    return exp
