@@ -1,72 +1,137 @@
-# logging_config.py
+import sys
+import json
+import logging
+import logging.config
+from pathlib import Path
 from typing import Dict, Any
 
-def get_logging_config(log_file_path: str) -> Dict[str, Any]:
-    """
-    根据传入的日志文件路径，生成日志配置字典。
-    """
-    
-    FILE_FORMATTER = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+class JsonFormatter(logging.Formatter):
+    # ... (保持不变) ...
+    def format(self, record: logging.LogRecord) -> str:
+        log_record = {
+            "timestamp": self.formatTime(record, self.datefmt),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+            "module": record.module,
+            "funcName": record.funcName,
+            "lineno": record.lineno,
+        }
+        if record.exc_info:
+            log_record["exception"] = self.formatException(record.exc_info)
+        if hasattr(record, "request_id"):
+            log_record["request_id"] = getattr(record, "request_id")
+        return json.dumps(log_record, ensure_ascii=False)
+
+def get_logging_config(log_file_path: str, log_level: str = "INFO") -> Dict[str, Any]:
+    # ... (保持不变) ...
+    # 确保日志目录存在
+    log_path = Path(log_file_path)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
 
     config = {
         'version': 1,
-        'disable_existing_loggers': False, # 保持现有 logger 启用
+        # 关键：设为 False 以保留 uvicorn 等第三方库的 logger 结构，
+        # 但我们需要手动清理 handler 以免重复
+        'disable_existing_loggers': False, 
 
-        # 1. 格式化器 (Formatters)
+        # --- Formatters ---
         'formatters': {
-            'file_formatter': {
-                'format': FILE_FORMATTER
-            }
-            # RichHandler 会自动处理自己的格式
+            'standard': {
+                'format': '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                'datefmt': '%Y-%m-%d %H:%M:%S'
+            },
+            'json': {
+                '()': JsonFormatter,
+                'datefmt': '%Y-%m-%d %H:%M:%S'
+            },
         },
 
-        # 2. 处理器 (Handlers)
+        # --- Handlers ---
         'handlers': {
-            # 处理器 A: 控制台 (RichHandler)
-            # 对应 main.py
-            'console_rich': {
-                'class': 'rich.logging.RichHandler', # 必须是完整的导入路径
-                'level': 'INFO', # 控制台级别
+            'console': {
+                'class': 'rich.logging.RichHandler',
+                'level': log_level,
+                'formatter': 'standard',
                 'rich_tracebacks': True,
                 'show_path': False,
                 'markup': True
             },
-            
-            # 处理器 B: 文件 (FileHandler)
-            # 对应 main.py
-            'file_handler': {
+            'file': {
                 'class': 'logging.handlers.RotatingFileHandler',
-                'level': 'DEBUG', # 文件级别
-                'formatter': 'file_formatter', # 使用上面定义的格式化器
-                'filename': log_file_path, # !! 使用传入的动态路径 !!
-                'mode': 'w', # 对应 main.py
-                'encoding': 'utf-8' # 对应 main.py
-            }
-        },
-
-        # 3. 根日志记录器 (Root Logger)
-        # 对应 main.py
-        'root': {
-            'level': 'WARNING', # 根 logger 必须是最低级别
-            'handlers': ['console_rich', 'file_handler'] # 应用两个处理器
-        },
-
-        # 4. 配置其他 logger
-        'loggers': {
-            'app': {
-                'level': 'INFO', # 或者 'DEBUG'，这样 info/debug 才能显示出来！
-                'handlers': ['console_rich', 'file_handler'],
-                'propagate': False 
-            },
-            'evaluation':{
                 'level': 'DEBUG',
-                'handlers': ['console_rich', 'file_handler'],
-                'propagate': False
+                'formatter': 'json',
+                'filename': str(log_path),
+                'mode': 'a',
+                'maxBytes': 10 * 1024 * 1024,
+                'backupCount': 5,
+                'encoding': 'utf-8'
             }
+        },
 
-        }
-
+        # --- Loggers ---
+        'loggers': {
+            # 根 Logger
+            '': {
+                'level': log_level,
+                'handlers': ['console', 'file'],
+                'propagate': True
+            },
+            # 核心应用 Logger
+            'app': {
+                'level': 'DEBUG',
+                'handlers': ['console', 'file'],
+                'propagate': False  # 禁止传播，防止 Root Logger 再打一遍
+            },
+            'evaluation': {
+                'level': 'DEBUG',
+                'handlers': ['console', 'file'],
+                'propagate': False
+            },
             
-        
+            # --- Uvicorn 日志接管 ---
+            # 将 Uvicorn 的日志重定向到我们的 Handler，确保格式统一且不重复
+            'uvicorn': {
+                'handlers': ['console', 'file'],
+                'level': 'INFO',
+                'propagate': False
+            },
+            'uvicorn.error': {
+                'level': 'INFO',
+                'handlers': ['console', 'file'],
+                'propagate': False
+            },
+            'uvicorn.access': {
+                'level': 'INFO',
+                'handlers': ['console', 'file'],
+                'propagate': False
+            },
+
+            # --- 降噪 ---
+            'httpx': {'level': 'WARNING'},
+            'httpcore': {'level': 'WARNING'},
+            'chromadb': {'level': 'WARNING'},
+            'pdfminer': {'level': 'WARNING'},
+            'multipart': {'level': 'WARNING'},
+            'watchfiles': {'level': 'WARNING'},
+            'urllib3': {'level': 'WARNING'},
+        }
     }
     return config
+
+def setup_logging(log_file_path: str, log_level: str = "INFO"):
+    """
+    初始化日志配置。
+    在应用配置前，先清理 Root Logger 的 Handlers，防止重复打印。
+    """
+    # 1. 强制清理 Root Logger 的 Handlers
+    # 这是解决 "日志打印两遍" 的关键步骤
+    root_logger = logging.getLogger()
+    if root_logger.handlers:
+        for handler in root_logger.handlers[:]:
+            root_logger.removeHandler(handler)
+            handler.close()
+    
+    # 2. 应用新配置
+    config = get_logging_config(log_file_path, log_level)
+    logging.config.dictConfig(config)
