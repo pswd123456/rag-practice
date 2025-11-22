@@ -2,18 +2,20 @@ from sqlmodel import Session, select
 from app.domain.models import (Knowledge, 
                                KnowledgeCreate, KnowledgeUpdate, 
                                Document)
-from app.core.config import settings    
+# delete_knowledge_pipeline 函数中使用了 delete_document_and_vectors，保留引用
 from app.services.document_crud import delete_document_and_vectors
 
 from fastapi import HTTPException
 from typing import Sequence
 
 import logging
-import logging.config
-from app.core.logging_setup import get_logging_config
 
-logging_config_dict = get_logging_config(str(settings.LOG_FILE_PATH))
-logging.config.dictConfig(logging_config_dict)
+# 移除 unnecessary imports 和 全局配置
+# import logging.config
+# from app.core.logging_setup import get_logging_config
+# from app.core.config import settings 
+
+# 仅获取 logger，不进行 dictConfig 配置
 logger = logging.getLogger(__name__)
 
 
@@ -101,4 +103,3 @@ def delete_knowledge_pipeline(db: Session, knowledge_id: int):
     except Exception as e:
         logger.error(f"删除知识库记录失败: {e}", exc_info=True)
         db.rollback()
-
