@@ -1,4 +1,4 @@
-# RAG Service V4
+# rag practice
 
 > 一个可部署、工程化、集成了全链路评估体系的垂直领域 RAG 服务。
 
