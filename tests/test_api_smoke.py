@@ -47,18 +47,29 @@ async def test_create_and_delete_logic(client):
 async def test_upload_flow(client, temp_kb):
     """
     这里的 temp_kb 参数就是上面 fixture yield 出来的 kb_id。
-    在这个测试里，我们只管上传，不用管创建和删除，fixture 帮我们全包了。
     """
-    kb_id = temp_kb # 拿到 fixture 提供的 ID
+    kb_id = temp_kb 
 
-    # 模拟上传
+    # 1. 模拟上传
     file_content = b"Content for teardown test."
     files = {"file": ("clean_test.txt", file_content, "text/plain")}
     
     response = await client.post(f"/knowledge/{kb_id}/upload", files=files)
     
     assert response.status_code == 200
-    assert isinstance(response.json(), int)
+    doc_id = response.json() # 获取返回的 doc_id
+    assert isinstance(doc_id, int)
+    
+    # 2. 🛠️ [Fix] 增加轮询等待，防止 Worker 还在跑的时候 Fixture 就把库删了
+    # 这就是导致 "StaleDataError" 和 "ValueError: 文档不存在" 的原因
+    max_retries = 10
+    for _ in range(max_retries):
+        doc_res = await client.get(f"/knowledge/documents/{doc_id}")
+        if doc_res.status_code == 200:
+            status = doc_res.json()["status"]
+            if status in ["COMPLETED", "FAILED"]:
+                break
+        await asyncio.sleep(1)
     
     # 测试结束，Pytest 会自动跳回去执行 temp_kb 里 yield 后面的代码 (执行删除)
 
