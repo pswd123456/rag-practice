@@ -25,10 +25,10 @@ async def handle_query(
     # 统一使用工厂，不再需要单独注入 store_manager 或 qa_service
     pipeline_factory = Depends(deps.get_rag_pipeline_factory),
 ):  
-    # 1. 一行代码创建 Pipeline，策略逻辑被封装了
+    
     rag_chain = pipeline_factory(
         knowledge_id=request.knowledge_id,
-        strategy=request.strategy, # 👈 传入前端请求的策略
+        strategy=request.strategy, #  传入前端请求的策略
         top_k=settings.TOP_K
     )
 
@@ -39,7 +39,7 @@ async def handle_query(
     # 3. 格式化来源 (保持原有逻辑)
     sources_list = []
     for doc in docs:
-        # ... (原有的 metadata 提取代码保持不变) ...
+        
         metadata = doc.metadata
         sources_list.append(Source(
             source_filename=metadata.get("source", "未知文件"),
@@ -63,7 +63,7 @@ async def stream_query(
     SSE (Server-Sent Events) 流式返回。
     事件流顺序:
     1. event: sources \n data: [JSON List of Sources]
-    2. event: message \n data: "Token String"  <-- 修改点：使用 JSON 字符串
+    2. event: message \n data: "Token String" 
     ...
     """
     rag_chain = pipeline_factory(

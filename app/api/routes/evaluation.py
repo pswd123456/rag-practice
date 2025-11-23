@@ -86,7 +86,7 @@ def delete_testset_endpoint(
     db: Session = Depends(deps.get_db_session)
 ):
     """
-    [新增] 删除测试集 (同步删除 MinIO 文件和关联实验)
+    删除测试集 (同步删除 MinIO 文件和关联实验)
     """
     return evaluation_crud.delete_testset(db, testset_id)
 
