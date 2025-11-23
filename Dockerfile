@@ -34,8 +34,7 @@ COPY requirements.txt .
 # --index-url : 强制指定阿里源
 # --mount     : 挂载缓存目录，确保下一次构建更快
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv pip install --system -r requirements.txt --index-url https://mirrors.aliyun.com/pypi/simple/
-
+    uv pip install --system -r requirements.txt
 # -----------------------------------------------------------------
 # 3. 源码层
 # -----------------------------------------------------------------
