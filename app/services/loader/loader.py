@@ -9,30 +9,6 @@ from typing import Iterable, List, Optional
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
-
-def create_document_loader():
-
-    logger.debug
-    
-    if not settings.SOURCH_FILE_DIR.exists():
-        logger.error(f"数据文件未找到: {settings.SOURCH_FILE_DIR}")
-        raise FileNotFoundError(f"数据文件 {settings.SOURCH_FILE_DIR} 不存在")
-
-    if Path(settings.SOURCH_FILE_DIR).is_dir():
-        loader = DirectoryLoader(str(settings.SOURCH_FILE_DIR))
-        logger.debug(f"正在从 {settings.SOURCH_FILE_DIR} 加载目录...")
-    
-    elif settings.SOURCH_FILE_DIR.suffix == ".pdf":
-        loader = PyPDFLoader(str(settings.SOURCH_FILE_DIR))
-        logger.debug(f"正在从 {settings.SOURCH_FILE_DIR} 加载 PDF...")
-
-    else:
-        logger.error(f"不支持的文件类型: {settings.SOURCH_FILE_DIR.suffix}")
-        raise ValueError(f"不支持的文件类型: {settings.SOURCH_FILE_DIR.suffix}")
-    
-    return loader
-
-
 def get_text_splitter(chunk_size: int, chunk_overlap: int):
     """
     配置并返回文本分割器实例。
@@ -46,16 +22,6 @@ def get_text_splitter(chunk_size: int, chunk_overlap: int):
     )
     
     return text_splitter
-
-def load_raw_docs() -> List[Document]:
-    """
-    从配置的目录或文件加载原始 Document。
-    """
-    loader = create_document_loader()
-    docs = loader.load()
-    logger.info("原始文档加载完成，共 %s 条。", len(docs))
-    return docs
-
 
 def normalize_metadata(docs: Iterable[Document]) -> List[Document]:
     """
@@ -78,16 +44,6 @@ def split_docs(docs: Iterable[Document], chunk_size: int, chunk_overlap: int) ->
     splitted_docs = splitter.split_documents(list(docs))
     logger.info(f"文档分割完成 (Size={chunk_size}, Overlap={chunk_overlap})，共 {len(splitted_docs)} 个块。")
     return splitted_docs
-
-
-def get_prepared_docs(chunk_size: int = settings.CHUNK_SIZE, chunk_overlap: int = settings.CHUNK_OVERLAP) -> List[Document]:
-    """
-    加载、清洗并分割文档。
-    for CLI
-    """
-    raw_docs = load_raw_docs()
-    normalized_docs = normalize_metadata(raw_docs)
-    return split_docs(normalized_docs, chunk_size, chunk_overlap)
 
 def load_single_document(file_path: str) -> List[Document]:
     """
