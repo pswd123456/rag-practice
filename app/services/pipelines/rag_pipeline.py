@@ -27,7 +27,7 @@ class RAGPipeline:
         self.retrieval_service = retrieval_service
         self.qa_service = qa_service
         
-        # 🟢 1. 初始化 Langfuse Callback
+        # 初始化 Langfuse Callback
         # 它会自动从环境变量读取 LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY
         self.langfuse_handler = CallbackHandler()
 
@@ -100,7 +100,7 @@ class RAGPipeline:
         """异步生成答案，注入 Tracing"""
         context = self._format_docs(docs)
         
-        # 🟢 2. 注入 Callback 到生成环节
+        # 注入 Callback 到生成环节
         # 这会自动记录 Generation Span (包括 Prompt、Completion、Token Usage)
         answer = await self.qa_service.ainvoke(
             question, 
@@ -115,7 +115,7 @@ class RAGPipeline:
 
     async def async_query(self, question: str):
         """执行完整 RAG 流程 (检索 + 生成)"""
-        # 🟢 3. 注入 Callback 到检索环节
+        # 注入 Callback 到检索环节
         # 这会自动记录 Retrieval Span (包括查询词、召回文档内容)
         docs = await self.retrieval_service.afetch(
             question, 
@@ -132,7 +132,7 @@ class RAGPipeline:
         """
         流式生成：先 Yield 检索到的文档列表，再 Yield 生成的 Token。
         """
-        # 🟢 4. 检索 Tracing
+        # 检索 Tracing
         docs = await self.retrieval_service.afetch(
             query,
             config={"callbacks": [self.langfuse_handler]}
@@ -142,7 +142,7 @@ class RAGPipeline:
         context = self._format_docs(docs)
         payload = {"question": query, "context": context}
         
-        # 🟢 5. 生成 Tracing (流式)
+        # 生成 Tracing (流式)
         # Langfuse 会自动聚合流式块，在 Trace 中显示完整回复
         async for token in self.generation_chain.astream(
             payload,

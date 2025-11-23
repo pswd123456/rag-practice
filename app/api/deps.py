@@ -11,27 +11,8 @@ from app.services.generation import QAService
 from app.services.pipelines import RAGPipeline
 from app.services.retrieval import RetrievalService, VectorStoreManager
 from app.domain.models import Knowledge
-# ---- Settings & DB ----
-
-#用于测试override settings, 正常来说config.py会生成一个唯一单例的settings对象
-# unused
-@lru_cache(maxsize=1)
-def get_settings() -> Settings:
-    return settings
-# unused
-def get_settings_dependency() -> Settings:
-    return get_settings()
-# unused
-def get_db_session() -> Generator[Session, None, None]:
-    yield from get_session()
 
 # ---- Model Factories ----
-
-
-@lru_cache(maxsize=1)
-def _get_embed_model():
-    return setup_embed_model("text-embedding-v4")
-
 
 @lru_cache(maxsize=1)
 def _get_llm():
