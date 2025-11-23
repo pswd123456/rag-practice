@@ -145,10 +145,137 @@ services:
       # - ./embed_models:/app/embed_models
       - ./logs:/app/logs
 
+ # ----------------------------------------------------------------
+  # 3. 可观测性服务 (Langfuse V3)
+  # ----------------------------------------------------------------
+  
+  # [Core] Langfuse Web Server (API & UI)
+  langfuse-server:
+    image: langfuse/langfuse:3
+    depends_on:
+      - langfuse-db
+      - clickhouse
+      - redis
+      - minio
+    ports:
+      - "3001:3000" # 宿主机 3001 -> 容器 3000
+    environment:
+      - NODE_ENV=production
+      # --- 关键修复：ClickHouse 连接串 (V3 必须) ---
+      - CLICKHOUSE_URL=http://clickhouse:8123
+      - CLICKHOUSE_MIGRATION_URL=clickhouse://clickhouse:9000
+      - CLICKHOUSE_USER=default
+      - CLICKHOUSE_PASSWORD=langfuse
+      - CLICKHOUSE_CLUSTER_ENABLED=false
+      # --- 数据库 ---
+      - DATABASE_URL=postgresql://langfuse:langfuse@langfuse-db:5432/langfuse
+      # --- 缓存与队列 (复用现有 Redis) ---
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_AUTH=
+      # --- 对象存储 (复用现有 MinIO) ---
+      - LANGFUSE_S3_EVENT_UPLOAD_BUCKET=langfuse-events
+      - LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT=http://minio:9000
+      - LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID=minioadmin
+      - LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY=minioadmin
+      - LANGFUSE_S3_EVENT_UPLOAD_REGION=us-east-1
+      - LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE=true
+      # --- 安全与认证 (.env配置) ---
+      - NEXTAUTH_SECRET=${LANGFUSE_NEXTAUTH_SECRET}
+      - SALT=${LANGFUSE_SALT}
+      - ENCRYPTION_KEY=${LANGFUSE_ENCRYPTION_KEY}
+      - NEXTAUTH_URL=http://localhost:3001
+      # --- 自动初始化 (可选) ---
+      - LANGFUSE_INIT_ORG_ID=my-org
+      - LANGFUSE_INIT_PROJECT_ID=my-project
+      - LANGFUSE_INIT_USER_EMAIL=admin@example.com
+      - LANGFUSE_INIT_USER_NAME=Admin
+      - LANGFUSE_INIT_USER_PASSWORD=password123
+    networks:
+      - rag-net
+
+  # [Core] Langfuse Worker (V3 新增，必须启动！)
+  langfuse-worker:
+    image: langfuse/langfuse-worker:3
+    depends_on:
+      - langfuse-db
+      - clickhouse
+      - redis
+      - minio
+    environment:
+      - NODE_ENV=production
+      # Worker 也需要连接 ClickHouse
+      - CLICKHOUSE_URL=http://clickhouse:8123
+      - CLICKHOUSE_USER=default
+      - CLICKHOUSE_PASSWORD=langfuse
+      - CLICKHOUSE_CLUSTER_ENABLED=false
+      - DATABASE_URL=postgresql://langfuse:langfuse@langfuse-db:5432/langfuse
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_AUTH=
+      - LANGFUSE_S3_EVENT_UPLOAD_BUCKET=langfuse-events
+      - LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT=http://minio:9000
+      - LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID=minioadmin
+      - LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY=minioadmin
+      - LANGFUSE_S3_EVENT_UPLOAD_REGION=us-east-1
+      - LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE=true
+      - SALT=${LANGFUSE_SALT}
+      - ENCRYPTION_KEY=${LANGFUSE_ENCRYPTION_KEY}
+    networks:
+      - rag-net
+
+  # [DB] Langfuse 专用 Postgres
+  langfuse-db:
+    image: postgres:15
+    restart: always
+    environment:
+      POSTGRES_USER: langfuse
+      POSTGRES_PASSWORD: langfuse
+      POSTGRES_DB: langfuse
+    volumes:
+      - langfuse_pg_data:/var/lib/postgresql/data
+    networks:
+      - rag-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U langfuse"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # [DB] ClickHouse (OLAP 数据库)
+  clickhouse:
+    image: clickhouse/clickhouse-server
+    restart: always
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    environment:
+      - CLICKHOUSE_DB=default
+      - CLICKHOUSE_USER=default
+      - CLICKHOUSE_PASSWORD=langfuse
+      - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
+    ports:
+      - "8123:8123" # HTTP 端口
+      - "9002:9000" # Native 端口
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - clickhouse_log:/var/log/clickhouse-server
+    networks:
+      - rag-net
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8123/ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
 volumes:
   pg_data:
   minio_data:
   chroma_data:
+  langfuse_pg_data:
+  clickhouse_data:
+  clickhouse_log:
 
 networks:
   rag-net:
