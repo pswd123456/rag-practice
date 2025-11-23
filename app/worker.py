@@ -88,6 +88,9 @@ class WorkerSettings:
         generate_testset_task, 
         run_experiment_task
     ]
-    redis_settings = RedisSettings(host=settings.REDIS_HOST, port=settings.REDIS_PORT)
+    redis_settings = RedisSettings(
+        host=settings.REDIS_HOST, 
+        port=settings.REDIS_PORT
+        )
     on_startup = startup
     on_shutdown = shutdown

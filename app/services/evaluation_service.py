@@ -1,4 +1,5 @@
 # app/services/evaluation_service.py
+import asyncio
 import json
 import logging
 import pandas as pd
@@ -8,6 +9,7 @@ from typing import List, Any, cast
 import ast # 用于安全地把字符串转回列表
 
 from sqlmodel import Session
+from langfuse import Langfuse
 from langchain_core.documents import Document
 from datasets import Dataset
 
@@ -47,6 +49,7 @@ def generate_testset_pipeline(db: Session, testset_id: int, source_doc_ids: List
     """
     from app.domain.models import Document as DBDocument # 避免命名冲突
     
+    langfuse = Langfuse()
     testset = db.get(Testset, testset_id)
     if not testset:
         logger.error(f"Testset {testset_id} not found")
@@ -106,6 +109,27 @@ def generate_testset_pipeline(db: Session, testset_id: int, source_doc_ids: List
         # content_type 改为 json
         save_bytes_to_minio(json_bytes, file_path, "application/json")
         
+        # 🟢 5. 同步上传到 Langfuse Datasets
+        lf_dataset_name = f"testset_{testset.id}_{testset.name}"
+        logger.info(f"正在同步测试集到 Langfuse: {lf_dataset_name}")
+        
+        langfuse.create_dataset(
+            name=lf_dataset_name,
+            description=f"Auto-generated from docs: {source_doc_ids}",
+            metadata={"testset_id": testset_id, "source": "rag-practice"}
+        )
+        
+        # 遍历 DataFrame 上传 Item
+        for _, row in df.iterrows():
+            langfuse.create_dataset_item(
+                dataset_name=lf_dataset_name,
+                input=row["user_input"],          # Question
+                expected_output=row["reference"], # Ground Truth
+                metadata={
+                    "source_context": row.get("reference_contexts")
+                }
+            )
+
         # 5. 更新 DB
         testset.file_path = file_path
         testset.description = f"Generated from {len(source_doc_ids)} docs. Size: {len(df)}"
@@ -133,8 +157,10 @@ def generate_testset_pipeline(db: Session, testset_id: int, source_doc_ids: List
 
 def run_experiment_pipeline(db: Session, experiment_id: int):
     """
-    执行一次 RAG 评测实验
+    执行 RAG 评测实验：Langfuse Experiment Runner 模式
     """
+    langfuse = Langfuse()
+    
     exp = db.get(Experiment, experiment_id)
     if not exp:
         return
@@ -147,122 +173,100 @@ def run_experiment_pipeline(db: Session, experiment_id: int):
 
         # 1. 准备组件
         kb = exp.knowledge
-        testset_record = exp.testset
+        ts = exp.testset
         
-        # 1.1 加载 Testset CSV
-        csv_bytes = get_file_from_minio(testset_record.file_path)
-        # 保存为临时文件供 datasets 库读取 (ragas 内部依赖 datasets.load_dataset)
-        json_str = csv_bytes.decode("utf-8")
-        data_list = [json.loads(line) for line in json_str.splitlines() if line.strip()]
-        
-        # 直接从内存构建 Dataset
-        from datasets import Dataset
-        hf_dataset = Dataset.from_list(data_list)
-            
-        # 1.2 初始化 RAG Pipeline (根据 KB 配置 + 实验运行时参数)
-        # [关键] 这里体现了架构的灵活性：
-        # KB 决定了 collection_name 和 embed_model
-        # Experiment 决定了 top_k, strategy, student_llm
+        dataset_name = f"testset_{ts.id}_{ts.name}"
         
         embed_model = setup_embed_model(kb.embed_model)
-        vector_store_manager = VectorStoreManager(
-            collection_name=f"kb_{kb.id}", 
-            embed_model=embed_model
-        )
-        # 确保连接，但不自动填充 (auto_ingest=False)
+        vector_store_manager = VectorStoreManager(f"kb_{kb.id}", embed_model)
         vector_store_manager.ensure_collection()
         
-        # 读取运行时参数
         params = exp.runtime_params or {}
-        top_k = params.get("top_k", settings.TOP_K)
-        strategy = params.get("strategy", "default")
-        student_llm_name = params.get("llm", "qwen-flash") # 被测模型
+        student_llm = setup_qwen_llm(params.get("llm", "qwen-flash"))
+        qa_service = QAService(student_llm) 
         
-        student_llm = setup_qwen_llm(student_llm_name)
-        qa_service = QAService(student_llm)
-        
-        # 动态构建 Pipeline
         pipeline = RAGPipeline.build(
             store_manager=vector_store_manager,
             qa_service=qa_service,
-            top_k=top_k,
-            strategy=strategy
+            top_k=params.get("top_k", settings.TOP_K),
+            strategy=params.get("strategy", "default")
         )
         
-        # 2. 初始化 Evaluator (复用 runner.py 中的类)
-        # 注意：Evaluator 需要 Judge LLM，通常需要较强的模型
         judge_llm = setup_qwen_llm("qwen-max") 
-        
         evaluator = RAGEvaluator(
             rag_pipeline=pipeline,
-            llm=judge_llm,         # Judge
-            embed_model=embed_model # Metric 计算用的 Embed
+            llm=judge_llm,
+            embed_model=embed_model
         )
-        
-        # 3. 注入数据 (Hack RAGEvaluator)
-        # RAGEvaluator原本是从配置读路径，现在我们要让它读我们刚才下载的临时 CSV
-        # 我们手动加载 dataset
-        from datasets import Dataset
-        hf_dataset = Dataset.from_list(data_list)
 
-        current_cols = hf_dataset.column_names
-        rename_map = {"user_input": "question", "reference": "ground_truth"}
-        if "user_input" in current_cols:
-            hf_dataset = hf_dataset.rename_columns(rename_map)
-            
-        evaluator.test_dataset = hf_dataset
-        
-        # 4. 执行生成与评估
-        # 先生成 answer/context (使用 Student LLM)
-        evaluator.load_and_process_testset() 
-        # 再跑分 (使用 Judge LLM)
-        result = evaluator.run_evaluation()
-        
-        # Ragas Result -> Dict
-        def get_score(res, key: str) -> float:
-            val = 0.0
-            try:
-                # 方案 A: 尝试标准下标访问
-                val = res[key]
-                
-                # === [优化] 针对 Ragas 返回 list 的情况 ([1.0]) 进行拆包 ===
-                if isinstance(val, list):
-                    if len(val) > 0:
-                        val = val[0] # 取第一个元素
-                    else:
-                        return 0.0 # 空列表
-                # ========================================================
+        # 2. 从 Langfuse 加载数据集
+        logger.info(f"从 Langfuse 加载数据集: {dataset_name}")
+        try:
+            lf_dataset = langfuse.get_dataset(dataset_name)
+        except Exception as e:
+            raise ValueError(f"无法在 Langfuse 找到数据集: {dataset_name}。请确认该测试集是否已成功生成并同步。")
 
-                return float(val)
-            except Exception as e_a:
-                # 如果方案 A 失败，记录日志并尝试方案 B
-                logger.warning(f"[GetScore] 方案A获取 {key} 失败: {e_a}")
-                
-                try:
-                    # 方案 B: 暴力解析字符串 (保持不变作为最后防线)
-                    res_str = str(res)
-                    res_dict = ast.literal_eval(res_str)
-                    if isinstance(res_dict, dict) and key in res_dict:
-                        return float(res_dict[key])
-                except Exception as e_b:
-                    logger.error(f"[GetScore] 方案B也失败了: {e_b}")
+        agg_scores = {"faithfulness": [], "answer_relevancy": [], "context_recall": [], "context_precision": []}
+
+        # 3. 遍历并运行实验
+        for item in lf_dataset.items:
+            question = item.input
+            ground_truth = item.expected_output
             
-            return 0.0
-        
-        # 5. 更新结果到 DB
-        exp.faithfulness = get_score(result, "faithfulness")
-        exp.answer_relevancy = get_score(result, "answer_relevancy")
-        exp.context_recall = get_score(result, "context_recall")
-        exp.context_precision = get_score(result, "context_precision")
+            with item.run(
+                run_name=f"exp_{experiment_id}_{kb.name}",
+                run_description=f"Strategy: {params.get('strategy')}",
+                run_metadata={
+                    "experiment_id": experiment_id,
+                    "knowledge_id": kb.id,
+                    **params
+                }
+            ) as trace:
+                
+                # A. 执行 RAG Pipeline
+                answer_result, docs = asyncio.run(pipeline.async_query(question))
+                retrieved_contexts = [d.page_content for d in docs]
+                
+                # B. 计算 Ragas 分数
+                scores = asyncio.run(evaluator.score_single_item(
+                    question=question,
+                    answer=answer_result,
+                    contexts=retrieved_contexts,
+                    ground_truth=ground_truth
+                ))
+                
+                # 🟢 [关键修复] 强制转换为原生 float，防止 numpy 类型污染
+                safe_scores = {k: float(v) for k, v in scores.items()}
+                
+                # C. 上报分数到 Langfuse
+                for metric_name, val in safe_scores.items():
+                    trace.score(name=metric_name, value=val)
+                    if metric_name in agg_scores:
+                        agg_scores[metric_name].append(val)
+
+        # 4. 计算平均分并更新 DB
+        def avg(lst):
+            # 再次确保结果是原生 float
+            return float(sum(lst) / len(lst)) if lst else 0.0
+
+        exp.faithfulness = avg(agg_scores["faithfulness"])
+        exp.answer_relevancy = avg(agg_scores["answer_relevancy"])
+        exp.context_recall = avg(agg_scores["context_recall"])
+        exp.context_precision = avg(agg_scores["context_precision"])
         
         exp.status = "COMPLETED"
         db.add(exp)
         db.commit()
-        logger.info(f"实验 {experiment_id} 完成。Scores: {result}")
+        logger.info(f"实验 {experiment_id} 完成。Avg Scores: Faith={exp.faithfulness:.2f}")
 
     except Exception as e:
         logger.error(f"实验 {experiment_id} 失败: {e}", exc_info=True)
-        exp.status = "FAILED"
-        exp.error_message = str(e)
-        db.add(exp)
-        db.commit()
+        # 事务回滚防止污染
+        db.rollback()
+        # 重新获取 exp 对象以记录错误
+        exp = db.get(Experiment, experiment_id)
+        if exp:
+            exp.status = "FAILED"
+            exp.error_message = str(e)[:500]
+            db.add(exp)
+            db.commit()

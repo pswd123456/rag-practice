@@ -5,8 +5,10 @@ RAG 评估器 (runner.py)
 import os
 import logging
 import warnings
-from typing import Optional
+from typing import Dict, Optional
 import typer
+
+from langfuse.langchain import CallbackHandler
 
 # Ragas & Datasets
 from datasets import load_dataset, Dataset
@@ -19,7 +21,7 @@ from ragas.metrics import (
     ContextRecall,
     Faithfulness,
 )
-
+from ragas.dataset_schema import SingleTurnSample
 # App Modules
 from app.core.config import settings
 from app.core.logging_setup import setup_logging
@@ -50,11 +52,14 @@ class RAGEvaluator:
     ):
         self.pipeline = rag_pipeline
         self.config = config or get_default_config()
+        self.langfuse_handler = CallbackHandler()
 
         logger.debug("正在初始化 Ragas LLM 和 Embeddings 包装器...")
+
         ragas_llm = LangchainLLMWrapper(llm)
+        ragas_llm.langchain_llm.callbacks = [self.langfuse_handler]
+
         ragas_embed = LangchainEmbeddingsWrapper(embed_model)
-        
         self.metrics = self._build_metrics(ragas_llm, ragas_embed)
         self.test_dataset = None
         self.scores_df = None
@@ -156,8 +161,29 @@ class RAGEvaluator:
             logger.info(f"评估结果已保存至: {output_csv_path}")
         except Exception as e:
             logger.error(f"保存失败: {e}", exc_info=True)
-
-
+    async def score_single_item(self, question: str, answer: str, contexts: list[str], ground_truth: str) -> Dict[str, float]:
+        """
+        计算单条数据的 Ragas 分数，用于 Langfuse Experiment Loop
+        """
+        sample = SingleTurnSample(
+            user_input=question,
+            response=answer,
+            retrieved_contexts=contexts,
+            reference=ground_truth
+        )
+        
+        scores = {}
+        for metric in self.metrics:
+            try:
+                # 针对单个样本进行评分
+                val = await metric.single_turn_ascore(sample)
+                scores[metric.name] = val
+            except Exception as e:
+                logger.error(f"Metric {metric.name} calculation failed: {e}")
+                scores[metric.name] = 0.0
+        
+        return scores
+    
 def prepare_pipeline(force_rebuild: bool = False):
     collection_name = settings.CHROMADB_COLLECTION_NAME
     embeddings = setup_embed_model("text-embedding-v4")
@@ -170,7 +196,6 @@ def prepare_pipeline(force_rebuild: bool = False):
         qa_service=QAService(llm),
     )
     return rag_pipeline, llm, embeddings
-
 
 # --- CLI App ---
 app = typer.Typer(help="RAG 评估 CLI")

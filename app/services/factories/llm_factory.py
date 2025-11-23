@@ -22,10 +22,16 @@ def setup_qwen_llm(model_name: str):
     base_url = settings.QWEN_BASE_URL
     logger.debug(f"LLM Base URL: {base_url}")
 
+    model_kwargs = {}
+
+    model_kwargs["stream_options"] = {"include_usage": True}
+
     llm = ChatOpenAI(
         model = model_name,
         api_key=SecretStr(dashscope_api_key), # 使用 SecretStr 避免密钥在日志中意外泄露
         base_url=base_url,
+        model_kwargs=model_kwargs,
+        streaming=True
     )
     logger.info(f"LLM 设置完成 模型名称: {model_name}")
     return llm

@@ -1,15 +1,12 @@
-
 services:
   # ----------------------------------------------------------------
-  # 1. 基础设施服务 (Database & Storage)
+  # 1. 基础设施服务
   # ----------------------------------------------------------------
   
-  # Postgres 数据库
   db:
     image: postgres:15
     restart: always
     environment:
-      # 这里的账号密码必须和你 .env 里的 DATABASE_URL 对应
       POSTGRES_USER: myuser
       POSTGRES_PASSWORD: mypassword
       POSTGRES_DB: rag_db
@@ -19,23 +16,22 @@ services:
     networks:
       - rag-net
     ports:
-      - "5432:5432" # 暴露给宿主机，方便你用 Navicat/DBeaver 连接
+      - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U myuser -d rag_db"]
       interval: 5s
       timeout: 5s
       retries: 5
 
-  # Redis 缓存/队列
   redis:
     image: redis:latest
     restart: always
+    # [修改] 删除 command 行，使用默认无密码配置
     networks:
       - rag-net
     ports:
       - "6379:6379"
 
-  # MinIO 对象存储
   minio:
     image: minio/minio
     restart: always
@@ -44,14 +40,13 @@ services:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
     ports:
-      - "9000:9000" # API 端口
-      - "9001:9001" # 控制台端口
+      - "9000:9000"
+      - "9001:9001"
     volumes:
       - minio_data:/data
     networks:
       - rag-net
 
-  # Chroma 向量数据库 (Server Mode)
   chroma:
     image: chromadb/chroma:latest
     restart: always
@@ -60,40 +55,39 @@ services:
     networks:
       - rag-net
     ports:
-      - "8001:8000" # <--- 关键修改：映射到宿主机 8001，避开 FastAPI 的 8000
+      - "8001:8000"
     environment:
       - IS_PERSISTENT=TRUE
 
   # ----------------------------------------------------------------
-  # 2. 应用服务 (API & Worker)
+  # 2. 应用服务
   # ----------------------------------------------------------------
 
-  # FastAPI 后端
   api:
     build: .
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     ports:
-      - "8000:8000" # 宿主机访问入口
-      - "8002:8001" # mkdocs入口
+      - "8000:8000"
+      - "8002:8001"
     env_file:
-      - .env # 加载 .env 文件中的 API KEY
+      - .env
     environment:
-      # --- 覆盖 .env 中的 localhost 配置 ---
-      # 容器内互访必须用服务名 (db, redis, minio, chroma)
       - DATABASE_URL=postgresql+psycopg2://myuser:mypassword@db:5432/rag_db
       - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      # [修改] 删除 REDIS_PASSWORD
       - MINIO_ENDPOINT=minio:9000
       - MINIO_ACCESS_KEY=minioadmin
       - MINIO_SECRET_KEY=minioadmin
       - MINIO_BUCKET_NAME=rag-knowledge-base
-      # 指向 Chroma 容器内部端口 (8000)
       - CHROMA_SERVER_HOST=chroma
       - CHROMA_SERVER_PORT=8000
-      # 透传 API Key (如果 .env 里有，这里会自动读取，不需要硬编码)
       - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY}
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY}
+      - LANGFUSE_BASE_URL=http://langfuse-server:3000
       - TZ=Asia/Shanghai
-      # 其他配置保持默认或从 .env 读取
     depends_on:
       db:
         condition: service_healthy
@@ -104,23 +98,21 @@ services:
     networks:
       - rag-net
     volumes:
-      # - ./embed_models:/app/embed_models # 挂载模型权重
-      - ./logs:/app/logs                 # 挂载日志
-      # 👇 新增这一行：把当前目录挂载到容器的 /app
-      # 这样你改本地代码，容器里立即生效（重启容器即可，不用 Build）
+      - ./logs:/app/logs
       - ./:/app
-      - /etc/localtime:/etc/localtime:ro  # <--- 挂载宿主机时钟文件
-      - /etc/timezone:/etc/timezone:ro    # <--- 挂载时区配置
-  # 异步任务 Worker
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+
   worker:
     build: .
     command: arq app.worker.WorkerSettings
     env_file:
       - .env
     environment:
-      # 同 API 配置
       - DATABASE_URL=postgresql+psycopg2://myuser:mypassword@db:5432/rag_db
       - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      # [修改] 删除 REDIS_PASSWORD
       - MINIO_ENDPOINT=minio:9000
       - MINIO_ACCESS_KEY=minioadmin
       - MINIO_SECRET_KEY=minioadmin
@@ -129,9 +121,12 @@ services:
       - CHROMA_SERVER_PORT=8000
       - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY}
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY}
+      - LANGFUSE_BASE_URL=http://langfuse-server:3000
       - TZ=Asia/Shanghai
-      - /etc/localtime:/etc/localtime:ro  # <--- 挂载宿主机时钟文件
-      - /etc/timezone:/etc/timezone:ro    # <--- 挂载时区配置
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
     depends_on:
       db:
         condition: service_healthy
@@ -142,69 +137,62 @@ services:
     networks:
       - rag-net
     volumes:
-      # - ./embed_models:/app/embed_models
       - ./logs:/app/logs
 
  # ----------------------------------------------------------------
-  # 3. 可观测性服务 (Langfuse V3)
+  # 3. 可观测性服务 (Langfuse)
   # ----------------------------------------------------------------
   
-  # [Core] Langfuse Web Server (API & UI)
   langfuse-server:
     image: langfuse/langfuse:3
     depends_on:
-      - langfuse-db
-      - clickhouse
-      - redis
-      - minio
+      langfuse-db:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      minio:
+        condition: service_started
     ports:
-      - "3001:3000" # 宿主机 3001 -> 容器 3000
+      - "3001:3000"
     environment:
       - NODE_ENV=production
-      # --- 关键修复：ClickHouse 连接串 (V3 必须) ---
       - CLICKHOUSE_URL=http://clickhouse:8123
       - CLICKHOUSE_MIGRATION_URL=clickhouse://clickhouse:9000
       - CLICKHOUSE_USER=default
       - CLICKHOUSE_PASSWORD=langfuse
       - CLICKHOUSE_CLUSTER_ENABLED=false
-      # --- 数据库 ---
       - DATABASE_URL=postgresql://langfuse:langfuse@langfuse-db:5432/langfuse
-      # --- 缓存与队列 (复用现有 Redis) ---
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - REDIS_AUTH=
-      # --- 对象存储 (复用现有 MinIO) ---
+      # [修改] 彻底删除 REDIS_AUTH 行，不要留空
       - LANGFUSE_S3_EVENT_UPLOAD_BUCKET=langfuse-events
       - LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT=http://minio:9000
       - LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID=minioadmin
       - LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY=minioadmin
       - LANGFUSE_S3_EVENT_UPLOAD_REGION=us-east-1
       - LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE=true
-      # --- 安全与认证 (.env配置) ---
       - NEXTAUTH_SECRET=${LANGFUSE_NEXTAUTH_SECRET}
       - SALT=${LANGFUSE_SALT}
       - ENCRYPTION_KEY=${LANGFUSE_ENCRYPTION_KEY}
       - NEXTAUTH_URL=http://localhost:3001
-      # --- 自动初始化 (可选) ---
-      - LANGFUSE_INIT_ORG_ID=my-org
-      - LANGFUSE_INIT_PROJECT_ID=my-project
-      - LANGFUSE_INIT_USER_EMAIL=admin@example.com
-      - LANGFUSE_INIT_USER_NAME=Admin
-      - LANGFUSE_INIT_USER_PASSWORD=password123
     networks:
       - rag-net
 
-  # [Core] Langfuse Worker (V3 新增，必须启动！)
   langfuse-worker:
     image: langfuse/langfuse-worker:3
     depends_on:
-      - langfuse-db
-      - clickhouse
-      - redis
-      - minio
+      langfuse-db:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      minio:
+        condition: service_started
     environment:
       - NODE_ENV=production
-      # Worker 也需要连接 ClickHouse
       - CLICKHOUSE_URL=http://clickhouse:8123
       - CLICKHOUSE_USER=default
       - CLICKHOUSE_PASSWORD=langfuse
@@ -212,7 +200,7 @@ services:
       - DATABASE_URL=postgresql://langfuse:langfuse@langfuse-db:5432/langfuse
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - REDIS_AUTH=
+      # [修改] 彻底删除 REDIS_AUTH 行
       - LANGFUSE_S3_EVENT_UPLOAD_BUCKET=langfuse-events
       - LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT=http://minio:9000
       - LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID=minioadmin
@@ -224,7 +212,6 @@ services:
     networks:
       - rag-net
 
-  # [DB] Langfuse 专用 Postgres
   langfuse-db:
     image: postgres:15
     restart: always
@@ -242,7 +229,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # [DB] ClickHouse (OLAP 数据库)
   clickhouse:
     image: clickhouse/clickhouse-server
     restart: always
@@ -256,8 +242,8 @@ services:
       - CLICKHOUSE_PASSWORD=langfuse
       - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
     ports:
-      - "8123:8123" # HTTP 端口
-      - "9002:9000" # Native 端口
+      - "8123:8123"
+      - "9002:9000"
     volumes:
       - clickhouse_data:/var/lib/clickhouse
       - clickhouse_log:/var/log/clickhouse-server

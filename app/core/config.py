@@ -57,6 +57,10 @@ class Settings(BaseSettings):
     EVALUATION_FILE_NAME: str
     
     DATABASE_URL: str
+
+    LANGFUSE_PUBLIC_KEY: str
+    LANGFUSE_SECRET_KEY: str
+    LANGFUSE_HOST: str 
     
     # --- 2. 不依赖其他配置的 "常量" 路径 ---
     #    这些可以直接使用 PROJECT_ROOT，它们是固定的
@@ -92,7 +96,9 @@ class Settings(BaseSettings):
     @computed_field
     @property
     def REDIS_URL(self) -> str:
+        # [修改] 恢复为无密码格式
         return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}"
+    
 
     # --- 4. 配置Pydantic-Settings ---
     model_config = SettingsConfigDict(

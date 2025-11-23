@@ -9,6 +9,7 @@ from typing import AsyncGenerator, List, Optional, Union
 
 from langchain_core.documents import Document
 from langchain_core.runnables import RunnablePassthrough, RunnableLambda
+from langfuse.langchain import CallbackHandler # 🟢 引入 Handler
 
 from app.services.generation.qa_service import QAService
 from app.services.retrieval.service import RetrievalService
@@ -25,8 +26,12 @@ class RAGPipeline:
         logger.debug("初始化 RAGPipeline...")
         self.retrieval_service = retrieval_service
         self.qa_service = qa_service
+        
+        # 🟢 1. 初始化 Langfuse Callback
+        # 它会自动从环境变量读取 LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY
+        self.langfuse_handler = CallbackHandler()
 
-        # 构建 LCEL 链以兼容 LangChain 生态
+        # 构建 LCEL 链 (保持原逻辑用于备用或 sync query)
         self.generation_chain = self.qa_service.chain
         
         retrieval_node = RunnableLambda(
@@ -92,9 +97,16 @@ class RAGPipeline:
         return answer, docs
 
     async def _prepare_answer_async(self, question: str, docs: List[Document]):
-        """异步生成答案，返回答案和文档"""
+        """异步生成答案，注入 Tracing"""
         context = self._format_docs(docs)
-        answer = await self.qa_service.ainvoke(question, context)
+        
+        # 🟢 2. 注入 Callback 到生成环节
+        # 这会自动记录 Generation Span (包括 Prompt、Completion、Token Usage)
+        answer = await self.qa_service.ainvoke(
+            question, 
+            context, 
+            config={"callbacks": [self.langfuse_handler]}
+        )
         return answer, docs
 
     def query(self, question: str):
@@ -102,7 +114,14 @@ class RAGPipeline:
         return self._prepare_answer(question, docs)
 
     async def async_query(self, question: str):
-        docs = await self.retrieval_service.afetch(question)
+        """执行完整 RAG 流程 (检索 + 生成)"""
+        # 🟢 3. 注入 Callback 到检索环节
+        # 这会自动记录 Retrieval Span (包括查询词、召回文档内容)
+        docs = await self.retrieval_service.afetch(
+            question, 
+            config={"callbacks": [self.langfuse_handler]}
+        )
+        
         return await self._prepare_answer_async(question, docs)
     
     async def astream_answer(self, query: str):
@@ -113,19 +132,22 @@ class RAGPipeline:
         """
         流式生成：先 Yield 检索到的文档列表，再 Yield 生成的 Token。
         """
-        # 1. 执行检索
-        docs = await self.retrieval_service.afetch(query)
-        # 2. 首先 Yield 文档 (List[Document])
+        # 🟢 4. 检索 Tracing
+        docs = await self.retrieval_service.afetch(
+            query,
+            config={"callbacks": [self.langfuse_handler]}
+        )
         yield docs
         
-        # 3. 格式化上下文
         context = self._format_docs(docs)
-        
-        # 4. 构造 Chain 的输入并流式调用
-        # generation_chain 期望输入为 Dict {"question": ..., "context": ...}
         payload = {"question": query, "context": context}
         
-        async for token in self.generation_chain.astream(payload):
+        # 🟢 5. 生成 Tracing (流式)
+        # Langfuse 会自动聚合流式块，在 Trace 中显示完整回复
+        async for token in self.generation_chain.astream(
+            payload,
+            config={"callbacks": [self.langfuse_handler]}
+        ):
             yield token
     def get_retrieval_service(self) -> RetrievalService:
         return self.retrieval_service
