@@ -1,68 +1,83 @@
 .
 ├── Dockerfile
 ├── README.md
+├── RELEASE_NOTES.md
 ├── app
 │   ├── __init__.py
 │   ├── api
 │   │   ├── __init__.py
 │   │   ├── deps.py
 │   │   └── routes
+│   │       ├── __init__.py
+│   │       ├── chat.py
+│   │       ├── evaluation.py
+│   │       └── knowledge.py
 │   ├── core
 │   │   ├── __init__.py
 │   │   ├── config.py
-│   │   └── logging_setup.py
+│   │   ├── logging_setup.py
+│   │   └── prompts.py
 │   ├── db
 │   │   ├── __init__.py
 │   │   └── session.py
 │   ├── domain
 │   │   ├── __init__.py
 │   │   ├── models
+│   │   │   ├── __init__.py
+│   │   │   ├── chunk.py
+│   │   │   ├── document.py
+│   │   │   ├── experiment.py
+│   │   │   ├── knowledge.py
+│   │   │   └── testset.py
 │   │   └── schemas
+│   │       ├── __init__.py
+│   │       └── chat.py
 │   ├── main.py
 │   ├── services
 │   │   ├── __init__.py
 │   │   ├── document_crud.py
+│   │   ├── evaluation_crud.py
+│   │   ├── evaluation_service.py
 │   │   ├── factories
+│   │   │   ├── __init__.py
+│   │   │   ├── embedding_factory.py
+│   │   │   └── llm_factory.py
 │   │   ├── file_storage.py
 │   │   ├── generation
+│   │   │   ├── __init__.py
+│   │   │   └── qa_service.py
 │   │   ├── ingest
+│   │   │   ├── __init__.py
+│   │   │   ├── ingest.py
+│   │   │   └── processor.py
 │   │   ├── knowledge_crud.py
 │   │   ├── loader
+│   │   │   ├── __init__.py
+│   │   │   └── loader.py
 │   │   ├── pipelines
+│   │   │   ├── __init__.py
+│   │   │   └── rag_pipeline.py
 │   │   └── retrieval
+│   │       ├── __init__.py
+│   │       ├── service.py
+│   │       ├── vector_store.py
+│   │       └── vector_store_manager.py
 │   └── worker.py
-├── chromadb
-│   └── test
-│       ├── bac9a3de-efad-4af5-b407-7ad70e2cc5ec
-│       └── chroma.sqlite3
-├── data
-│   ├── scores
-│   ├── testset
-│   └── uploads
-│       ├── 1
-│       ├── 3
-│       └── 4
 ├── docker-compose.yml
 ├── docs
+│   ├── architecture.md
 │   ├── experiments
 │   │   └── log.md
 │   ├── index.md
-│   └── reference
-│       ├── pipline.md
-│       └── util.md
-├── embed_models
-│   └── Qwen3-Embedding-0.6B
-│       ├── 1_Pooling
-│       ├── README.md
-│       ├── config.json
-│       ├── config_sentence_transformers.json
-│       ├── generation_config.json
-│       ├── merges.txt
-│       ├── model.safetensors
-│       ├── modules.json
-│       ├── tokenizer.json
-│       ├── tokenizer_config.json
-│       └── vocab.json
+│   ├── reference
+│   │   ├── core.md
+│   │   ├── evaluation.md
+│   │   ├── generation.md
+│   │   ├── ingest.md
+│   │   ├── models.md
+│   │   ├── pipeline.md
+│   │   └── retrieval.md
+│   └── setup.md
 ├── environment.yml
 ├── evaluation
 │   ├── __init__.py
@@ -70,22 +85,28 @@
 │   ├── runner.py
 │   └── testset.py
 ├── frontend
-│   └── app.py
+│   ├── api.py
+│   ├── app.py
+│   ├── tabs
+│   │   ├── __init__.py
+│   │   ├── chat.py
+│   │   ├── documents.py
+│   │   ├── evaluation.py
+│   │   ├── settings.py
+│   │   └── sidebar.py
+│   └── utils.py
 ├── logs
 │   └── project.log
 ├── mkdocs.yml
-├── notebooks
-│   ├── __init__.py
-│   └── langchain_tutorial_chunk_embedmodel.ipynb
 ├── pytest.ini
 ├── requirements.txt
-├── scripts
-│   └── ingest.py
 ├── structure.txt
 └── tests
     ├── __init__.py
     ├── conftest.py
     ├── test_api_smoke.py
-    └── test_chat_flow.py
+    ├── test_chat_flow.py
+    ├── test_ingest_processor.py
+    └── test_worker_config.py
 
-37 directories, 51 files
+23 directories, 86 files

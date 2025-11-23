@@ -36,6 +36,10 @@ def _get_file_size(file_obj) -> int:
         return size
 
 def save_upload_file(upload_file: UploadFile, knowledge_id: int) -> str:
+    """
+    接受用户上传的文件保存到minio,
+    处理UPloadFile对象
+    """
     client = get_minio_client()
     
     if not client.bucket_exists(settings.MINIO_BUCKET_NAME):
@@ -98,6 +102,7 @@ def get_file_from_minio(object_name: str) -> bytes:
     注意：此函数会将整个文件读入内存 (return bytes)。
     对于极大的文件 (如 >1GB)，建议在业务层改用 client.get_object 返回的 stream 直接处理，
     而不是调用此辅助函数。
+    此函数主要用于处理ragas测试集
     """
     client = get_minio_client()
     response = None
