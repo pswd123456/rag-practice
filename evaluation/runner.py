@@ -80,35 +80,6 @@ class RAGEvaluator:
             else:
                 logger.warning("未知指标 %s，已跳过。", name)
         return metrics
-
-    def load_and_process_testset(self):
-        if self.test_dataset is None:
-            logger.info(f"TestDataset 为空，尝试从默认路径加载: {settings.TESTSET_OUTPUT_PATH}")
-            try:
-                hf_dataset = load_dataset("csv", data_files=str(settings.TESTSET_OUTPUT_PATH))
-                self.test_dataset = hf_dataset["train"] # type: ignore
-                
-                # 重命名
-                rename_columns_dict = {"user_input": "question", "reference": "ground_truth"}
-                if "user_input" in self.test_dataset.column_names:
-                    self.test_dataset = self.test_dataset.rename_columns(rename_columns_dict)
-                
-                # 清洗
-                cols_to_remove = ["reference_contexts", 'synthesizer_name']
-                existing_cols = self.test_dataset.column_names
-                self.test_dataset = self.test_dataset.remove_columns([c for c in cols_to_remove if c in existing_cols])
-                
-            except Exception as e:
-                logger.error(f"默认路径加载失败: {e}")
-                raise e
-
-        logger.info("开始使用 RAG 管道为测试集生成 'answer' 和 'contexts'...")
-        self.test_dataset = self.test_dataset.map(
-            self._integrate_testset,
-            batched=True,
-            batch_size=self.config.batch_size,
-        )
-        return self.test_dataset
     
     def _integrate_testset(self, batch):
         questions  = batch["question"]
@@ -135,32 +106,7 @@ class RAGEvaluator:
             "answer": answer_list,
             "contexts": contexts_str_lists
         }
-
-    def run_evaluation(self):
-        logger.info("开始执行 Ragas 评估...")
-        if self.test_dataset is None:
-            self.load_and_process_testset()
-
-        result = evaluate(
-            self.test_dataset, # type: ignore
-            metrics=self.metrics     
-        )
-
-        logger.info(f"Ragas 评估结果: {result}")
-        self.scores_df = result.to_pandas() # type: ignore
-        return result
     
-    def save_results(self):
-        if self.scores_df is None:
-            logger.warning("评估分数为空，跳过保存。")
-            return
-        
-        output_csv_path = settings.EVALUATION_CSV_PATH
-        try:
-            self.scores_df.to_csv(output_csv_path, index=False) 
-            logger.info(f"评估结果已保存至: {output_csv_path}")
-        except Exception as e:
-            logger.error(f"保存失败: {e}", exc_info=True)
     async def score_single_item(self, question: str, answer: str, contexts: list[str], ground_truth: str) -> Dict[str, float]:
         """
         计算单条数据的 Ragas 分数，用于 Langfuse Experiment Loop
@@ -196,41 +142,3 @@ def prepare_pipeline(force_rebuild: bool = False):
         qa_service=QAService(llm),
     )
     return rag_pipeline, llm, embeddings
-
-# --- CLI App ---
-app = typer.Typer(help="RAG 评估 CLI")
-
-@app.command()
-def benchmark(
-    force_rebuild: bool = typer.Option(False, "--force-rebuild", help="强制重建向量库"),
-    export: Optional[str] = typer.Option(None, "--export", help="额外导出评分 CSV 路径"),
-):
-    """
-    运行完整的 RAG 评估流程。
-    """
-    # 仅在 CLI 模式下初始化日志，避免作为模块导入时污染 API 日志配置
-    setup_logging(str(settings.LOG_FILE_PATH), log_level="INFO")
-    
-    logger.info("===================")
-    logger.info("RAG 评估器启动 (CLI)")
-    logger.info("===================")
-
-    try:
-        rag_pipeline, llm, embeddings = prepare_pipeline(force_rebuild=force_rebuild)
-        evaluator = RAGEvaluator(rag_pipeline=rag_pipeline, llm=llm, embed_model=embeddings)
-
-        evaluator.load_and_process_testset()
-        evaluator.run_evaluation()
-        evaluator.save_results()
-
-        if export and evaluator.scores_df is not None:
-            evaluator.scores_df.to_csv(export, index=False)
-            typer.echo(f"评估结果已额外导出至 {export}")
-
-        typer.echo("评估完成。")
-    except Exception as exc:
-        logger.critical("评估器运行失败: %s", exc, exc_info=True)
-        raise typer.Exit(code=1) from exc
-
-if __name__ == "__main__":
-    app()

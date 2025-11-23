@@ -14,7 +14,6 @@ if not ENV_PATH:
     # 所以这里改为 Warning 或直接 pass，不再 sys.exit(1)
     print(f"警告：未找到 .env 文件，将仅依赖环境变量。当前根目录: {PROJECT_ROOT}", file=sys.stderr)
 else:
-    # 如果找到了 .env，再次确认一下它是不是在根目录下 (可选)
     pass
 
 class Settings(BaseSettings):
@@ -65,7 +64,6 @@ class Settings(BaseSettings):
     # --- 2. 不依赖其他配置的 "常量" 路径 ---
     #    这些可以直接使用 PROJECT_ROOT，它们是固定的
     LOG_DIR: Path = PROJECT_ROOT / "logs"
-    SOURCH_FILE_DIR: Path = PROJECT_ROOT / "data"#本地开发时期的遗留, 理论上不会发挥作用
     # EMBED_MODEL_DIR: Path = PROJECT_ROOT / "embed_models"
 
     # --- 3. "派生" 的配置 (使用 @computed_field) ---
@@ -77,26 +75,10 @@ class Settings(BaseSettings):
     @property
     def LOG_FILE_PATH(self) -> Path:
         return self.LOG_DIR / "project.log"
-
-    @computed_field
-    @property
-    def VECTOR_DB_PERSIST_DIR(self) -> str:
-        return str(PROJECT_ROOT / "chromadb" / self.VECTOR_DB_NAME)#本地开发时期的遗留, 理论上不会发挥作用
-
-    @computed_field
-    @property
-    def TESTSET_OUTPUT_PATH(self) -> Path:
-        return self.SOURCH_FILE_DIR / "testset" / self.TESTSET_NAME#本地开发时期的遗留, 理论上不会发挥作用
-    
-    @computed_field
-    @property
-    def EVALUATION_CSV_PATH(self) -> Path:
-        return self.SOURCH_FILE_DIR / "scores" / self.EVALUATION_FILE_NAME#本地开发时期的遗留, 理论上不会发挥作用
     
     @computed_field
     @property
     def REDIS_URL(self) -> str:
-        # [修改] 恢复为无密码格式
         return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}"
     
 
