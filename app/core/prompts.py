@@ -1,4 +1,7 @@
 # app/core/prompts.py
+"""
+!! 注意, 现在使用langfuse统一管理prompt，不再使用这个文件
+"""
 from enum import Enum
 
 class PromptStyle(str, Enum):
