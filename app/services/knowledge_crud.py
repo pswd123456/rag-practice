@@ -50,7 +50,7 @@ def update_knowledge(db: Session, knowledge_id: int, knowledge_to_update: Knowle
 
 def delete_knowledge_pipeline(db: Session, knowledge_id: int):
     """
-    [异步任务专用] 级联删除知识库
+    级联删除知识库
     """
     logger.info(f"开始执行知识库 {knowledge_id} 的级联删除任务...")
     
