@@ -1,12 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-数据摄取模块 (ingest.py)
-
-负责协调整个数据摄取流程：
-1. 加载 Embedding 模型
-2. 加载和分割源文档 (PDF)
-3. 设置向量数据库 (Chroma)
-4. 将分割后的文档存入向量数据库
+这个文件属于初期开发学习的遗留, 删掉太麻烦就不删了
+现在充当vectorstore的胶水代码
+主要包装setup_vector_store这个函数
+实际上的ingest逻辑参考processor.py
 """
 import logging
 from typing import Any
