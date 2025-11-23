@@ -8,7 +8,7 @@ from sqlmodel import Session
 
 from app.core.config import settings
 from app.domain.models import Document, DocStatus, Chunk, Knowledge
-from app.services.loader import load_single_document, split_docs, normalize_metadata
+from app.services.loader import load_single_document, split_docs
 from app.services.factories import setup_embed_model
 from app.services.retrieval import setup_vector_store
 from app.services.file_storage import get_minio_client
@@ -64,18 +64,18 @@ def process_document_pipeline(db: Session, doc_id: int):
             )
             temp_file_path = tmp_file.name
         
-        # 3. 加载与标准化
+        # 3. 加载
         raw_docs = load_single_document(temp_file_path)
-        normalized_docs = normalize_metadata(raw_docs)
+        
         
         # 注入元数据
-        for d in normalized_docs:
+        for d in raw_docs:
             d.metadata["source"] = doc.filename 
             d.metadata["doc_id"] = doc.id
             d.metadata["knowledge_id"] = doc.knowledge_base_id
 
         # 4. 切分
-        splitted_docs = split_docs(normalized_docs, chunk_size, chunk_overlap)
+        splitted_docs = split_docs(raw_docs, chunk_size, chunk_overlap)
         
         # 5. 向量化与入库 (Chroma)
         embed_model = setup_embed_model(embed_model_name)

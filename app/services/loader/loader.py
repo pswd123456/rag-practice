@@ -23,19 +23,6 @@ def get_text_splitter(chunk_size: int, chunk_overlap: int):
     
     return text_splitter
 
-def normalize_metadata(docs: Iterable[Document]) -> List[Document]:
-    """
-    标准化 Document metadata，确保包含 `source` 字段。
-    """
-    normalized: List[Document] = []
-    for doc in docs:
-        metadata = dict(doc.metadata or {})
-        metadata.setdefault("source", metadata.get("source", str(settings.SOURCH_FILE_DIR)))
-        normalized.append(Document(page_content=doc.page_content, metadata=metadata))
-    logger.debug("元数据标准化完成。")
-    return normalized
-
-
 def split_docs(docs: Iterable[Document], chunk_size: int, chunk_overlap: int) -> List[Document]:
     """
     对 Document 进行分块。

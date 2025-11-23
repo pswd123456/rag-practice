@@ -23,7 +23,7 @@ from app.core.config import settings
 from app.domain.models import Testset, Experiment, Knowledge, KnowledgeStatus
 from app.services.factories import setup_embed_model, setup_qwen_llm
 from app.services.file_storage import save_bytes_to_minio, get_file_from_minio
-from app.services.loader import load_single_document, normalize_metadata
+from app.services.loader import load_single_document
 from app.services.retrieval import VectorStoreManager, RetrievalService
 from app.services.pipelines import RAGPipeline
 from app.services.generation import QAService
@@ -74,9 +74,7 @@ def generate_testset_pipeline(db: Session, testset_id: int, source_doc_ids: List
             with tempfile.NamedTemporaryFile(delete=True, suffix=suffix) as tmp:
                 minio_client.fget_object(settings.MINIO_BUCKET_NAME, db_doc.file_path, tmp.name)
                 loaded = load_single_document(tmp.name)
-                # 标准化 Metadata
-                normalized = normalize_metadata(loaded)
-                langchain_docs.extend(normalized)
+                langchain_docs.extend(loaded)
         
         if not langchain_docs:
             raise ValueError("没有加载到任何有效文档，无法生成测试集")

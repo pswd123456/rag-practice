@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import MagicMock, patch
 from sqlmodel import Session, select
-
+import uuid
 from app.domain.models import Document, DocStatus, Chunk, Knowledge
 from app.services.ingest.processor import process_document_pipeline
 
@@ -18,8 +18,10 @@ def test_process_document_pipeline_success(
     mock_get_minio_client, # 🔴 修改点 2: 参数名改一下，更清晰
     db: Session,
 ):
+    
+    random_suffix = uuid.uuid4().hex[:8]
     # --- 1. 准备测试数据 (Arrange) ---
-    kb = Knowledge(name="test_kb_processor", description="for unit test")
+    kb = Knowledge(name=f"test_kb_processo_{random_suffix}", description="for unit test")
     db.add(kb)
     db.commit()
     db.refresh(kb)
