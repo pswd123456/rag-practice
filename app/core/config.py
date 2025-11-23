@@ -65,7 +65,7 @@ class Settings(BaseSettings):
     # --- 2. 不依赖其他配置的 "常量" 路径 ---
     #    这些可以直接使用 PROJECT_ROOT，它们是固定的
     LOG_DIR: Path = PROJECT_ROOT / "logs"
-    SOURCH_FILE_DIR: Path = PROJECT_ROOT / "data"
+    SOURCH_FILE_DIR: Path = PROJECT_ROOT / "data"#本地开发时期的遗留, 理论上不会发挥作用
     # EMBED_MODEL_DIR: Path = PROJECT_ROOT / "embed_models"
 
     # --- 3. "派生" 的配置 (使用 @computed_field) ---
@@ -81,17 +81,17 @@ class Settings(BaseSettings):
     @computed_field
     @property
     def VECTOR_DB_PERSIST_DIR(self) -> str:
-        return str(PROJECT_ROOT / "chromadb" / self.VECTOR_DB_NAME)
+        return str(PROJECT_ROOT / "chromadb" / self.VECTOR_DB_NAME)#本地开发时期的遗留, 理论上不会发挥作用
 
     @computed_field
     @property
     def TESTSET_OUTPUT_PATH(self) -> Path:
-        return self.SOURCH_FILE_DIR / "testset" / self.TESTSET_NAME
+        return self.SOURCH_FILE_DIR / "testset" / self.TESTSET_NAME#本地开发时期的遗留, 理论上不会发挥作用
     
     @computed_field
     @property
     def EVALUATION_CSV_PATH(self) -> Path:
-        return self.SOURCH_FILE_DIR / "scores" / self.EVALUATION_FILE_NAME
+        return self.SOURCH_FILE_DIR / "scores" / self.EVALUATION_FILE_NAME#本地开发时期的遗留, 理论上不会发挥作用
     
     @computed_field
     @property

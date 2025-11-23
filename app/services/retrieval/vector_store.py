@@ -30,8 +30,7 @@ def setup_vector_store(collection_name: str, embedding_function: Embeddings):
     :param embedding_function: Embedding 函数实例
     :return: Chroma 实例
     """
-
-    if settings.CHROMA_SERVER_HOST:
+    try:
         client = get_chroma_client()
         
         vector_store = Chroma(
@@ -40,15 +39,8 @@ def setup_vector_store(collection_name: str, embedding_function: Embeddings):
             embedding_function=embedding_function,
         )
         
-    else:
-        # 降级回本地模式 (兼容非 Docker 开发环境)
-        # 本地模式通常用于测试，每次重新加载影响不大，但也可以考虑优化
-        logger.debug(f"使用本地持久化目录: {settings.VECTOR_DB_PERSIST_DIR}")
-
-        vector_store = Chroma(
-            collection_name=collection_name,
-            embedding_function=embedding_function,
-            persist_directory=settings.VECTOR_DB_PERSIST_DIR
-        )
+    except Exception as e:
+        logger.error(f"向量数据库 (Chroma) 初始化失败: {e}")
+        raise e
 
     return vector_store

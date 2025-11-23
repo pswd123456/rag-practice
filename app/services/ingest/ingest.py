@@ -10,8 +10,6 @@ from typing import Any
 
 from app.services.retrieval import setup_vector_store
 
-from app.services.loader import get_prepared_docs
-
 # 获取 'core.ingest' 模块的 logger
 logger = logging.getLogger(__name__)
 
@@ -34,33 +32,5 @@ def build_or_get_vector_store(
     logger.info("开始构建/加载向量数据库，集合: %s", collection_name)
 
     vector_store = setup_vector_store(collection_name, embed_model)
-    chroma_collection = vector_store._collection
-    item_count = chroma_collection.count()
-
-    if force_rebuild and item_count > 0:
-        logger.warning("检测到 force_rebuild=True，正在清空集合 %s ...", collection_name)
-        vector_store._client.delete_collection(name=collection_name)
-        vector_store = setup_vector_store(collection_name, embed_model)
-        item_count = 0
-
-    if item_count > 0:
-        logger.info("向量数据库 '%s' 已存在, 跳过构建。", collection_name)
-        return vector_store
-
-    if auto_ingest:
-        
-        logger.info("向量数据库 '%s' 不存在，开始构建...", collection_name)
-        docs = get_prepared_docs()
-
-        logger.info("正在将 %s 个文档块添加到 '%s' 集合中...", len(docs), collection_name)
-        try:
-            vector_store.add_documents(docs)
-            logger.info("文档添加成功。")
-        except Exception as e:
-            logger.error("向向量数据库添加文档时出错: %s", e, exc_info=True)
-            raise
-    else:
-
-        logger.info("向量数据库 '%s' 不存在或为空。跳过自动填充。", collection_name)
 
     return vector_store
