@@ -2,17 +2,12 @@
 """
 RAG 评估器 (runner.py)
 """
-import os
 import logging
-import warnings
 from typing import Dict, Optional
-import typer
 
 from langfuse.langchain import CallbackHandler
 
 # Ragas & Datasets
-from datasets import load_dataset, Dataset
-from ragas import evaluate
 from ragas.embeddings import LangchainEmbeddingsWrapper
 from ragas.llms import LangchainLLMWrapper
 from ragas.metrics import (
@@ -22,17 +17,15 @@ from ragas.metrics import (
     Faithfulness,
 )
 from ragas.dataset_schema import SingleTurnSample
+
 # App Modules
 from app.core.config import settings
-from app.core.logging_setup import setup_logging
 from app.services.factories import setup_embed_model, setup_qwen_llm
 from app.services.generation import QAService
 from app.services.ingest import build_or_get_vector_store
 from app.services.pipelines import RAGPipeline
 from app.services.retrieval import RetrievalService
 from app.services.evaluation.config import EvaluationConfig, get_default_config
-
-warnings.filterwarnings("ignore", message=".*Torch was not compiled with flash attention.*")
 
 # 移除模块级别的 logging 配置代码
 # 只获取 logger 实例
@@ -64,6 +57,32 @@ class RAGEvaluator:
         self.test_dataset = None
         self.scores_df = None
 
+    async def adapt_metrics(self, language: str = "chinese"):
+        """
+        利用 LLM 自动将评估指标的 Prompt 适配到指定语言。
+        """
+        logger.info(f"正在将 Ragas 评估指标 Prompt 适配为: {language}...")
+        
+        adapted_count = 0
+        for metric in self.metrics:
+            try:
+                # 检查指标是否支持 Prompt 适配 (BaseMetric 通常都支持)
+                if hasattr(metric, "adapt_prompts") and hasattr(metric, "set_prompts"):
+                    # 使用指标自带的 LLM (即我们在 __init__ 传入的 ragas_llm)
+                    # 注意：adapt_prompts 是异步方法
+                    adapted_prompts = await metric.adapt_prompts(language=language, llm=metric.llm)
+                    
+                    # 将适配后的 Prompts 应用回指标实例
+                    metric.set_prompts(**adapted_prompts)
+                    adapted_count += 1
+                    logger.debug(f"指标 [{metric.name}] 语言适配成功")
+                else:
+                    logger.warning(f"指标 [{metric.name}] 不支持 adapt_prompts，已跳过")
+            
+            except Exception as e:
+                logger.warning(f"指标 [{metric.name}] 语言适配失败: {e}，将保持默认(英语) Prompt")
+
+        logger.info(f"语言适配完成: {adapted_count}/{len(self.metrics)} 个指标已更新为 {language} 环境。")
     def _build_metrics(self, ragas_llm, ragas_embed):
         metric_builders = {
             "faithfulness": lambda: Faithfulness(llm=ragas_llm),
