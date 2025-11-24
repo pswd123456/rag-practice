@@ -8,7 +8,7 @@ def render_chat_tab(selected_kb):
         # [修改] 添加模型选择
         llm_model = st.selectbox(
             "对话模型", 
-            ["qwen-flash", "qwen-max", "google/gemini-3-pro-preview-free"],
+            ["qwen-flash", "qwen-plus", "qwen-max", "google/gemini-3-pro-preview-free"],
             index=0
         )
     with col_s2:

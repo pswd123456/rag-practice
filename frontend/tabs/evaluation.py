@@ -37,7 +37,7 @@ def render_evaluation_tab(selected_kb):
                     # [修改] 学生模型 (Student Model)
                     exp_student_llm = st.selectbox(
                         "学生 LLM (回答者)", 
-                        ["qwen-flash", "qwen-max", "google/gemini-3-pro-preview-free"],
+                        ["qwen-flash", "qwen-plus", "qwen-max", "google/gemini-3-pro-preview-free"],
                         index=0
                     )
                     
