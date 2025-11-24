@@ -19,12 +19,7 @@ from ragas.metrics import (
 from ragas.dataset_schema import SingleTurnSample
 
 # App Modules
-from app.core.config import settings
-from app.services.factories import setup_embed_model, setup_qwen_llm
-from app.services.generation import QAService
-from app.services.ingest import build_or_get_vector_store
 from app.services.pipelines import RAGPipeline
-from app.services.retrieval import RetrievalService
 from app.services.evaluation.config import EvaluationConfig, get_default_config
 
 # 移除模块级别的 logging 配置代码
