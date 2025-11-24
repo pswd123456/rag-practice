@@ -2,10 +2,21 @@ import streamlit as st
 import api
 
 def render_chat_tab(selected_kb):
-    col_s1, col_s2 = st.columns([1, 4])
+    # 1. 顶部配置区
+    col_s1, col_s2, col_s3 = st.columns([1, 1, 3])
     with col_s1:
+        # [修改] 添加模型选择
+        llm_model = st.selectbox(
+            "对话模型", 
+            ["qwen-flash", "qwen-max", "google/gemini-3-pro-preview-free"],
+            index=0
+        )
+    with col_s2:
         strategy = st.selectbox("检索策略", ["default", "dense_only", "hybrid", "rerank"])
+    with col_s3:
         use_stream = st.checkbox("流式输出", value=True)
+        # 稍微调整一下排版，让checkbox垂直居中
+        st.write("") 
     
     if "messages" not in st.session_state:
         st.session_state.messages = []
@@ -14,7 +25,7 @@ def render_chat_tab(selected_kb):
         st.session_state.messages = []
         st.rerun()
 
-    # 1. 渲染历史消息
+    # 2. 渲染历史消息
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
@@ -26,7 +37,7 @@ def render_chat_tab(selected_kb):
                         st.markdown(f"**[{idx+1}] {src['source_filename']}{page_info}**")
                         st.caption(src['chunk_content'])
 
-    # 2. 处理用户输入
+    # 3. 处理用户输入
     if prompt := st.chat_input("在这个知识库中搜索..."):
         # 显示用户消息
         st.session_state.messages.append({"role": "user", "content": prompt})
@@ -38,7 +49,8 @@ def render_chat_tab(selected_kb):
             payload = {
                 "query": prompt,
                 "knowledge_id": selected_kb['id'],
-                "strategy": strategy
+                "strategy": strategy,
+                "llm_model": llm_model # [新增] 传递选中的模型
             }
             
             full_response = ""
@@ -46,10 +58,7 @@ def render_chat_tab(selected_kb):
 
             # ================= A. 流式模式 =================
             if use_stream:
-                # 仅在流式模式下创建占位符
                 message_placeholder = st.empty()
-                
-                # 使用 api 封装的生成器
                 stream_gen = api.chat_stream(payload)
                 
                 for event in stream_gen:
@@ -63,23 +72,21 @@ def render_chat_tab(selected_kb):
                     
                     elif event["type"] == "message":
                         full_response += event["data"]
-                        # 实时更新占位符
                         message_placeholder.markdown(full_response + "▌")
                 
                 if full_response != "Error":
-                    # 循环结束，用最终结果覆盖占位符 (移除光标)
                     message_placeholder.markdown(full_response)
 
             # ================= B. 普通模式 =================
             else:
-                with st.spinner("思考中..."):
+                with st.spinner(f"正在思考 ({llm_model})..."):
                     success, data = api.chat_query(payload)
                     if success:
                         full_response = data["answer"]
                         retrieved_sources = data["sources"]
                         st.markdown(full_response)
                     else:
-                        st.error(data) # error message
+                        st.error(data)
                         full_response = "Error"
 
             # ================= 公共逻辑：显示来源 =================
