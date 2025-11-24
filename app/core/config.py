@@ -22,12 +22,12 @@ class Settings(BaseSettings):
     Pydantic 会自动从 .env 文件和环境变量中读取这些值
     """
     
-    PROJECT_NAME: str
+    PROJECT_NAME: str = "rag-practice"
 
     # --- MinIO 配置 ---
     MINIO_ENDPOINT: str = "localhost:9000" # Docker Desktop 映射到 localhost
-    MINIO_ACCESS_KEY: str = "minioadmin"
-    MINIO_SECRET_KEY: str = "minioadmin"
+    MINIO_ACCESS_KEY: str 
+    MINIO_SECRET_KEY: str 
     MINIO_BUCKET_NAME: str = "rag-knowledge-base"
     MINIO_SECURE: bool = False # 本地开发通常用 HTTP (False)
 
@@ -38,25 +38,30 @@ class Settings(BaseSettings):
     # --- 1. 从 .env 读取的 "基础" 变量 ---
     # Pydantic 会自动进行类型转换和验证
     
+    # llm keys
+
+    DEFAULT_LLM_MODEL: str = "qwen-flash"
+
+    ZENMUX_API_KEY: str
+    ZENMUX_BASE_URL: str = "https://zenmux.ai/api/v1"
+
+    DASHSCOPE_BASE_URL: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     DASHSCOPE_API_KEY: str
-    QWEN_BASE_URL: str
-    VECTOR_DB_NAME: str
 
-    CHROMADB_COLLECTION_NAME: str
-    CHROMA_SERVER_HOST: str = "" 
+    # db
+    CHROMA_SERVER_HOST: str  
     CHROMA_SERVER_PORT: int = 8000
+    DATABASE_URL: str
 
+    # retrieval
     TOP_K: int
-
     CHUNK_SIZE: int
     CHUNK_OVERLAP: int
 
-    TESTSET_NAME: str
+    # evaluation
     TESTSET_SIZE: int
-    EVALUATION_FILE_NAME: str
     
-    DATABASE_URL: str
-
+    # langfuse
     LANGFUSE_PUBLIC_KEY: str
     LANGFUSE_SECRET_KEY: str
     LANGFUSE_HOST: str 

@@ -16,7 +16,7 @@ class EvaluationConfig:
         "faithfulness",
         # "answer_relevancy",
         "context_recall",
-        "context_precision",
+        # "context_precision",
     )
 
 

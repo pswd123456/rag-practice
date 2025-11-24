@@ -75,18 +75,22 @@ services:
       - DATABASE_URL=postgresql+psycopg2://myuser:mypassword@db:5432/rag_db
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      # [修改] 删除 REDIS_PASSWORD
+      
       - MINIO_ENDPOINT=minio:9000
       - MINIO_ACCESS_KEY=minioadmin
       - MINIO_SECRET_KEY=minioadmin
       - MINIO_BUCKET_NAME=rag-knowledge-base
+
       - CHROMA_SERVER_HOST=chroma
       - CHROMA_SERVER_PORT=8000
+
+      - ZENMUX_API_KEY=${ZENMUX_API_KEY}
       - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}
-      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+
       - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY}
       - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY}
       - LANGFUSE_BASE_URL=http://langfuse-server:3000
+
       - TZ=Asia/Shanghai
     depends_on:
       db:
@@ -110,23 +114,26 @@ services:
       - .env
     environment:
       - DATABASE_URL=postgresql+psycopg2://myuser:mypassword@db:5432/rag_db
+
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      # [修改] 删除 REDIS_PASSWORD
+      
       - MINIO_ENDPOINT=minio:9000
       - MINIO_ACCESS_KEY=minioadmin
       - MINIO_SECRET_KEY=minioadmin
       - MINIO_BUCKET_NAME=rag-knowledge-base
+
       - CHROMA_SERVER_HOST=chroma
       - CHROMA_SERVER_PORT=8000
+
+      - ZENMUX_API_KEY=${ZENMUX_API_KEY}
       - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}
-      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      
       - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY}
       - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY}
       - LANGFUSE_BASE_URL=http://langfuse-server:3000
+
       - TZ=Asia/Shanghai
-      - /etc/localtime:/etc/localtime:ro
-      - /etc/timezone:/etc/timezone:ro
     depends_on:
       db:
         condition: service_healthy
@@ -138,7 +145,8 @@ services:
       - rag-net
     volumes:
       - ./logs:/app/logs
-
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
  # ----------------------------------------------------------------
   # 3. 可观测性服务 (Langfuse)
   # ----------------------------------------------------------------
@@ -164,15 +172,17 @@ services:
       - CLICKHOUSE_PASSWORD=langfuse
       - CLICKHOUSE_CLUSTER_ENABLED=false
       - DATABASE_URL=postgresql://langfuse:langfuse@langfuse-db:5432/langfuse
+
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      # [修改] 彻底删除 REDIS_AUTH 行，不要留空
+      
       - LANGFUSE_S3_EVENT_UPLOAD_BUCKET=langfuse-events
       - LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT=http://minio:9000
       - LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID=minioadmin
       - LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY=minioadmin
       - LANGFUSE_S3_EVENT_UPLOAD_REGION=us-east-1
       - LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE=true
+
       - NEXTAUTH_SECRET=${LANGFUSE_NEXTAUTH_SECRET}
       - SALT=${LANGFUSE_SALT}
       - ENCRYPTION_KEY=${LANGFUSE_ENCRYPTION_KEY}
@@ -197,10 +207,12 @@ services:
       - CLICKHOUSE_USER=default
       - CLICKHOUSE_PASSWORD=langfuse
       - CLICKHOUSE_CLUSTER_ENABLED=false
+
       - DATABASE_URL=postgresql://langfuse:langfuse@langfuse-db:5432/langfuse
+
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      # [修改] 彻底删除 REDIS_AUTH 行
+      
       - LANGFUSE_S3_EVENT_UPLOAD_BUCKET=langfuse-events
       - LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT=http://minio:9000
       - LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID=minioadmin
