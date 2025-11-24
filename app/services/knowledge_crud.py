@@ -6,7 +6,7 @@ from fastapi import HTTPException
 
 from app.domain.models import (Knowledge, 
                                KnowledgeCreate, KnowledgeUpdate, 
-                               Document)
+                               Document, Experiment)
 from app.services.document_crud import delete_document_and_vectors
 
 # 移除重复的 logging config 配置
@@ -79,6 +79,21 @@ def delete_knowledge_pipeline(db: Session, knowledge_id: int):
     remaining_docs = db.exec(select(Document).where(Document.knowledge_base_id == knowledge_id)).all()
     if remaining_docs:
         logger.error(f"级联删除异常：知识库 {knowledge_id} 仍有 {len(remaining_docs)} 个文档未被清除。")
+        return
+
+    try:
+        # 显式查询
+        exp_statement = select(Experiment).where(Experiment.knowledge_id == knowledge_id)
+        experiments = db.exec(exp_statement).all()
+        
+        if experiments:
+            logger.info(f"正在清理关联的 {len(experiments)} 个实验记录...")
+            for exp in experiments:
+                db.delete(exp)
+                
+    except Exception as e:
+        logger.error(f"删除关联实验失败: {e}", exc_info=True)
+
         return
 
     try:
