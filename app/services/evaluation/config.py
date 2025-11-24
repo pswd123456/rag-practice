@@ -14,7 +14,7 @@ class EvaluationConfig:
     batch_size: int = 16
     metrics: Tuple[str, ...] = (
         "faithfulness",
-        "answer_relevancy",
+        # "answer_relevancy",
         "context_recall",
         "context_precision",
     )

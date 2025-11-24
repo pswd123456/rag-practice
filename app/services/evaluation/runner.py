@@ -66,6 +66,11 @@ class RAGEvaluator:
         adapted_count = 0
         for metric in self.metrics:
             try:
+
+                if metric.name == "answer_relevancy":
+                    logger.info(f"指标 [{metric.name}] 已跳过中文适配")
+                    continue
+
                 # 检查指标是否支持 Prompt 适配 (BaseMetric 通常都支持)
                 if hasattr(metric, "adapt_prompts") and hasattr(metric, "set_prompts"):
                     # 使用指标自带的 LLM (即我们在 __init__ 传入的 ragas_llm)
