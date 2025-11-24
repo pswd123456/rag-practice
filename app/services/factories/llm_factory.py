@@ -19,7 +19,7 @@ def setup_qwen_llm(model_name: str, max_tokens: Optional[int] = None):
         logger.error("llm apikey 未设置！")
         raise ValueError("LLM apikey is not set")
 
-    base_url = settings.QWEN_BASE_URL
+    base_url = settings.DASHSCOPE_BASE_URL
     logger.debug(f"LLM Base URL: {base_url}")
 
     model_kwargs = {}
