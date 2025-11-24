@@ -11,6 +11,8 @@ from app.services.generation import QAService
 from app.services.pipelines import RAGPipeline
 from app.services.retrieval import RetrievalService, VectorStoreManager
 from app.domain.models import Knowledge
+def get_db_session() -> Generator[Session, None, None]:
+    yield from get_session()
 
 # ---- Model Factories ----
 
