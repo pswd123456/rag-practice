@@ -180,7 +180,7 @@ def run_experiment_pipeline(db: Session, experiment_id: int):
             strategy=params.get("strategy", "default")
         )
         
-        judge_llm = setup_qwen_llm("qwen-max") 
+        judge_llm = setup_qwen_llm("qwen-max", max_tokens=4096) 
         evaluator = RAGEvaluator(
             rag_pipeline=pipeline,
             llm=judge_llm,
