@@ -36,7 +36,6 @@ def get_rag_pipeline_factory(
                         strategy: str = "default"
                         ):
         
-        # === 🚀 [修复] 动态连接正确的向量集合 ===
         if knowledge_id:
             # 1. 查库获取配置
             knowledge = db.get(Knowledge, knowledge_id)
@@ -55,12 +54,6 @@ def get_rag_pipeline_factory(
             # 确保连接（但不自动填充）
             manager.ensure_collection()
             
-        else:
-            # 兜底逻辑（比如不选知识库时的纯闲聊，或者旧逻辑）
-            # 这里的行为取决于你的业务定义，暂时可以用默认配置
-            embed_model = setup_embed_model("text-embedding-v4")
-            manager = VectorStoreManager(settings.CHROMADB_COLLECTION_NAME, embed_model)
-
         # 3. 构建 Pipeline
         return RAGPipeline.build(
             store_manager=manager,
