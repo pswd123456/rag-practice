@@ -9,11 +9,10 @@ def render_evaluation_tab(selected_kb):
     
     # === 子标签 1: 实验看板 ===
     with eval_tab1:
-        col_e1, col_e2 = st.columns([1, 3])
+        col_e1, col_e2 = st.columns([1, 2])
         with col_e1:
             st.subheader("🚀 发起新实验")
             testsets = api.get_testsets()
-            # 过滤：只保留 COMPLETED 的测试集
             ready_testsets = [ts for ts in testsets if ts.get('status') == 'COMPLETED']
             
             if not ready_testsets:
@@ -29,24 +28,44 @@ def render_evaluation_tab(selected_kb):
                     if selected_ts_name:
                         selected_ts_id = ts_options[selected_ts_name]
                     else:
-                            selected_ts_id = None
+                        selected_ts_id = None
 
                     st.markdown("**运行时参数**")
                     exp_top_k = st.number_input("Top K", min_value=1, max_value=50, value=3, step=1)
                     exp_strategy = st.selectbox("检索策略", ["default", "hybrid", "rerank"])
-                    exp_llm = st.selectbox("学生 LLM", ["qwen-flash", "qwen-turbo", "qwen-plus"])
+                    
+                    # [修改] 学生模型 (Student Model)
+                    exp_student_llm = st.selectbox(
+                        "学生 LLM (回答者)", 
+                        ["qwen-flash", "qwen-max", "google/gemini-3-pro-preview-free"],
+                        index=0
+                    )
+                    
+                    # [新增] 裁判模型 (Judge Model)
+                    exp_judge_llm = st.selectbox(
+                        "裁判 LLM (评分者)", 
+                        ["qwen-max", "google/gemini-3-pro-preview-free"], # Judge 通常需要强模型
+                        index=0,
+                        help="Ragas 评估需要较强的推理能力，建议使用 Qwen-Max 或 Gemini-Pro/Flash"
+                    )
                     
                     if st.form_submit_button("开始评估", type="primary"):
                         if selected_ts_id:
-                            params = {"top_k": exp_top_k, "strategy": exp_strategy, "llm": exp_llm}
+                            # [修改] 组装参数
+                            params = {
+                                "top_k": exp_top_k, 
+                                "strategy": exp_strategy, 
+                                "student_model": exp_student_llm,
+                                "judge_model": exp_judge_llm
+                            }
                             success, result = api.run_experiment(selected_kb['id'], selected_ts_id, params)
                             
                             if success:
-                                exp_id = result # result 是 ID
+                                exp_id = result
                                 st.toast(f"实验已提交 (ID: {exp_id})，开始运行...", icon="🏃")
                                 
                                 # --- 实时进度可视化 ---
-                                with st.status("🧪 正在运行评估 (这可能需要几分钟)...", expanded=True) as status:
+                                with st.status(f"🧪 正在评估 ({exp_student_llm} vs {exp_judge_llm})...", expanded=True) as status:
                                     st.write("🚀 初始化实验环境...")
                                     status_placeholder = st.empty()
                                     time.sleep(1)
@@ -62,10 +81,8 @@ def render_evaluation_tab(selected_kb):
                                         if exp_status == "COMPLETED":
                                             status_placeholder.empty()
                                             status.update(label="✅ 评估完成！", state="complete", expanded=False)
-                                            
                                             st.success("评估成功！结果如下：")
                                             
-                                            # 准备指标数据
                                             metrics = {
                                                 "Faithfulness": exp_data.get("faithfulness", 0),
                                                 "Relevancy": exp_data.get("answer_relevancy", 0),
@@ -73,18 +90,14 @@ def render_evaluation_tab(selected_kb):
                                                 "Precision": exp_data.get("context_precision", 0)
                                             }
                                             
-                                            # 绘制雷达图
                                             fig = utils.plot_radar_chart(metrics)
                                             st.pyplot(fig, use_container_width=False)
                                             
-                                            # 显示数值
                                             c_m1, c_m2, c_m3, c_m4 = st.columns(4)
                                             c_m1.metric("Faithfulness", f"{metrics['Faithfulness']:.3f}")
                                             c_m2.metric("Relevancy", f"{metrics['Relevancy']:.3f}")
                                             c_m3.metric("Recall", f"{metrics['Recall']:.3f}")
                                             c_m4.metric("Precision", f"{metrics['Precision']:.3f}")
-                                            
-                                            st.caption("提示：点击下方的刷新列表可将其归档。")
                                             break
                                         
                                         elif exp_status == "FAILED":
@@ -99,7 +112,7 @@ def render_evaluation_tab(selected_kb):
                                         elif exp_status == "PENDING":
                                             status_placeholder.markdown("⏳ 正在排队中...")
                                         
-                                        time.sleep(3) # 轮询间隔
+                                        time.sleep(3)
                             else:
                                 st.error(result)
                         else:
@@ -109,16 +122,16 @@ def render_evaluation_tab(selected_kb):
             st.subheader("📈 历史实验记录")
             experiments = api.get_experiments(selected_kb['id'])
             if experiments:
-                h1, h2, h3, h4, h5 = st.columns([0.5, 1.5, 4.5, 2, 1])
+                h1, h2, h3, h4, h5 = st.columns([0.5, 1.5, 4.5, 2.5, 1])
                 h1.markdown("**ID**")
                 h2.markdown("**状态**")
-                h3.markdown("**各项指标 (DB字段)**")
-                h4.markdown("**参数**")
+                h3.markdown("**各项指标**")
+                h4.markdown("**模型配置**") # 变宽一点显示模型名
                 h5.markdown("**操作**")
                 st.divider()
 
                 for exp in experiments:
-                    c1, c2, c3, c4, c5 = st.columns([0.5, 1.5, 4.5, 2, 1])
+                    c1, c2, c3, c4, c5 = st.columns([0.5, 1.5, 4.5, 2.5, 1])
                     
                     c1.text(f"#{exp['id']}")
                     
@@ -132,18 +145,21 @@ def render_evaluation_tab(selected_kb):
                         
                     if status == "COMPLETED":
                         metrics_display = f"""
-                        **faithfulness**: {exp.get('faithfulness', 0):.4f}  
-                        **answer_relevancy**: {exp.get('answer_relevancy', 0):.4f}  
-                        **context_recall**: {exp.get('context_recall', 0):.4f}  
-                        **context_precision**: {exp.get('context_precision', 0):.4f}
+                        **Faithfulness**: {exp.get('faithfulness', 0):.3f}  
+                        **Relevancy**: {exp.get('answer_relevancy', 0):.3f}  
+                        **Recall**: {exp.get('context_recall', 0):.3f}  
+                        **Precision**: {exp.get('context_precision', 0):.3f}
                         """
                         c3.markdown(metrics_display)
                     else:
                         c3.caption("-")
                         
                     params = exp.get("runtime_params", {}) or {}
-                    param_str = f"TopK:{params.get('top_k')} | {params.get('strategy')}"
-                    c4.text(param_str)
+                    # [修改] 增强显示
+                    student = params.get("student_model") or params.get("llm") or "qwen-flash"
+                    judge = params.get("judge_model") or "qwen-max"
+                    param_str = f"**Student**: {student}\n**Judge**: {judge}\nTopK: {params.get('top_k')}"
+                    c4.markdown(param_str)
                     
                     if c5.button("🗑️", key=f"del_exp_{exp['id']}"):
                         success, msg = api.delete_experiment(exp['id'])
@@ -158,8 +174,10 @@ def render_evaluation_tab(selected_kb):
             else:
                 st.info("当前知识库暂无实验记录。")
 
-    # === 子标签 2: 测试集管理 ===
     with eval_tab2:
+        # 保持原有的测试集管理代码不变，为了简洁这里不重复粘贴
+        # 但在真实环境中，你需要保留 render_evaluation_tab 的后半部分
+        # 这里我重新粘贴一下这部分代码以确保文件完整性
         st.info("基于当前知识库的文档生成测试集。")
         with st.expander("✨ 生成新测试集", expanded=True):
             current_docs = api.get_documents(selected_kb['id'])
@@ -184,24 +202,20 @@ def render_evaluation_tab(selected_kb):
                                 with st.status("正在生成测试集 (这可能需要几分钟)...", expanded=True) as status:
                                     while True:
                                         ts_status = api.get_testset_status(ts_id)
-                                        
                                         if ts_status == "COMPLETED":
                                             status.update(label="✅ 生成完成！", state="complete", expanded=False)
                                             st.success(f"测试集 {ts_name} 生成成功！")
                                             time.sleep(1)
                                             st.rerun()
                                             break
-                                        
                                         elif ts_status == "FAILED":
                                             status.update(label="❌ 生成失败", state="error", expanded=True)
                                             st.error("后台任务失败，请查看列表中的错误详情。")
                                             break
-                                        
                                         elif ts_status == "NOT_FOUND":
                                             status.update(label="⚠️ 未找到", state="error", expanded=True)
                                             st.error("测试集ID未找到。")
                                             break
-                                        
                                         time.sleep(2)
                             else:
                                 st.error(msg)
@@ -237,5 +251,4 @@ def render_evaluation_tab(selected_kb):
                                 st.rerun()
                             else:
                                 st.error(msg)
-
                 st.divider()

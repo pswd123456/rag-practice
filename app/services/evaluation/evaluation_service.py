@@ -16,7 +16,8 @@ from ragas.llms import LangchainLLMWrapper
 # 复用项目基础设施
 from app.core.config import settings
 from app.domain.models import Testset, Experiment
-from app.services.factories import setup_embed_model, setup_qwen_llm
+# [修改] 引入通用工厂 setup_llm，移除 setup_qwen_llm
+from app.services.factories import setup_embed_model, setup_llm
 from app.services.file_storage import save_bytes_to_minio, get_minio_client
 from app.services.loader import load_single_document
 from app.services.retrieval import VectorStoreManager
@@ -26,7 +27,7 @@ from app.services.evaluation.runner import RAGEvaluator
 
 logger = logging.getLogger(__name__)
 
-# 应用 nest_asyncio 防止事件循环冲突 (Ragas 内部可能需要)
+# 应用 nest_asyncio 防止事件循环冲突
 nest_asyncio.apply()
 
 # ==========================================
@@ -35,9 +36,9 @@ nest_asyncio.apply()
 
 def generate_testset_pipeline(db: Session, testset_id: int, source_doc_ids: List[int]):
     """
-    根据指定的源文档生成测试集，并存入 MinIO 和 DB
+    根据指定的源文档生成测试集
     """
-    from app.domain.models import Document as DBDocument # 避免命名冲突
+    from app.domain.models import Document as DBDocument
     
     langfuse = Langfuse()
     testset = db.get(Testset, testset_id)
@@ -50,7 +51,8 @@ def generate_testset_pipeline(db: Session, testset_id: int, source_doc_ids: List
         testset.status = "GENERATING"
         db.add(testset)
         db.commit()
-        # 1. 加载源文档 (从 MinIO 下载 -> LangChain Document)
+        
+        # 1. 加载源文档
         langchain_docs = []
         minio_client = get_minio_client()
         
@@ -59,7 +61,6 @@ def generate_testset_pipeline(db: Session, testset_id: int, source_doc_ids: List
             if not db_doc: 
                 continue
             
-            # 临时下载文件以读取内容
             suffix = Path(db_doc.filename).suffix
             with tempfile.NamedTemporaryFile(delete=True, suffix=suffix) as tmp:
                 minio_client.fget_object(settings.MINIO_BUCKET_NAME, db_doc.file_path, tmp.name)
@@ -70,7 +71,9 @@ def generate_testset_pipeline(db: Session, testset_id: int, source_doc_ids: List
             raise ValueError("没有加载到任何有效文档，无法生成测试集")
 
         # 2. 初始化 Generator
-        generator_llm = setup_qwen_llm("qwen-max")
+        # [修改] 使用 setup_llm 替代 setup_qwen_llm，默认使用强模型生成数据
+        # 未来这里也可以从配置读取生成器模型
+        generator_llm = setup_llm("qwen-max") 
         generator_embed = setup_embed_model("text-embedding-v4")
         
         generator = TestsetGenerator(
@@ -78,8 +81,7 @@ def generate_testset_pipeline(db: Session, testset_id: int, source_doc_ids: List
             embedding_model=LangchainEmbeddingsWrapper(generator_embed)
         )
         
-        # 3. 执行生成 (Ragas Core)
-        # testset_size 可以在 testset 表里加字段控制，这里先写死或读配置
+        # 3. 执行生成
         dataset = generator.generate_with_langchain_docs(
             langchain_docs, 
             testset_size=settings.TESTSET_SIZE
@@ -90,12 +92,10 @@ def generate_testset_pipeline(db: Session, testset_id: int, source_doc_ids: List
         json_str = df.to_json(orient="records", lines=True, force_ascii=False)
         json_bytes = json_str.encode('utf-8')
         
-        # 改后缀为 .jsonl
         file_path = f"testsets/{testset.id}_{testset.name}.jsonl"
-        # content_type 改为 json
         save_bytes_to_minio(json_bytes, file_path, "application/json")
         
-        # 🟢 5. 同步上传到 Langfuse Datasets
+        # 5. 同步上传到 Langfuse Datasets
         lf_dataset_name = f"testset_{testset.id}_{testset.name}"
         logger.info(f"正在同步测试集到 Langfuse: {lf_dataset_name}")
         
@@ -105,30 +105,27 @@ def generate_testset_pipeline(db: Session, testset_id: int, source_doc_ids: List
             metadata={"testset_id": testset_id, "source": "rag-practice"}
         )
         
-        # 遍历 DataFrame 上传 Item
         for _, row in df.iterrows():
             langfuse.create_dataset_item(
                 dataset_name=lf_dataset_name,
-                input=row["user_input"],          # Question
-                expected_output=row["reference"], # Ground Truth
+                input=row["user_input"],
+                expected_output=row["reference"],
                 metadata={
                     "source_context": row.get("reference_contexts")
                 }
             )
 
-        # 5. 更新 DB
+        # 6. 更新 DB
         testset.file_path = file_path
         testset.description = f"Generated from {len(source_doc_ids)} docs. Size: {len(df)}"
-        testset.status = "COMPLETED" # <--- 标记完成
+        testset.status = "COMPLETED"
         testset.error_message = None
         db.add(testset)
         db.commit()
-        logger.info(f"Testset {testset_id} 生成完成并保存到 {file_path}")
+        logger.info(f"Testset {testset_id} 生成完成")
 
     except Exception as e:
         logger.error(f"Testset 生成失败: {e}", exc_info=True)
-        # [修改] 标记失败
-        # 重新获取对象防止 session 脱离
         testset = db.get(Testset, testset_id) 
         if testset:
             testset.status = "FAILED"
@@ -144,6 +141,7 @@ def generate_testset_pipeline(db: Session, testset_id: int, source_doc_ids: List
 def run_experiment_pipeline(db: Session, experiment_id: int):
     """
     执行 RAG 评测实验：Langfuse Experiment Runner 模式
+    支持动态选择 Student LLM 和 Judge LLM
     """
     langfuse = Langfuse()
     
@@ -160,15 +158,29 @@ def run_experiment_pipeline(db: Session, experiment_id: int):
         # 1. 准备组件
         kb = exp.knowledge
         ts = exp.testset
-        
         dataset_name = f"testset_{ts.id}_{ts.name}"
+        
+        # 获取运行时参数
+        params = exp.runtime_params or {}
+        
+        # --- [核心修改] 动态加载模型 ---
+        # 1. Student Model: 负责回答问题
+        # 如果参数里叫 'llm' (兼容旧版) 或 'student_model' (新版)，没传则默认 qwen-flash
+        student_model_name = params.get("student_model") or params.get("llm") or "qwen-flash"
+        logger.info(f"Experiment Student Model: {student_model_name}")
+        student_llm = setup_llm(student_model_name)
+        
+        # 2. Judge Model: 负责 Ragas 评分
+        # 默认为 qwen-max，也可以配置为 google/gemini-pro 以节省成本
+        judge_model_name = params.get("judge_model", "qwen-max")
+        logger.info(f"Experiment Judge Model: {judge_model_name}")
+        judge_llm = setup_llm(judge_model_name)
+        # -----------------------------
         
         embed_model = setup_embed_model(kb.embed_model)
         vector_store_manager = VectorStoreManager(f"kb_{kb.id}", embed_model)
         vector_store_manager.ensure_collection()
         
-        params = exp.runtime_params or {}
-        student_llm = setup_qwen_llm(params.get("llm", "qwen-flash"))
         qa_service = QAService(student_llm) 
         
         pipeline = RAGPipeline.build(
@@ -178,25 +190,24 @@ def run_experiment_pipeline(db: Session, experiment_id: int):
             strategy=params.get("strategy", "default")
         )
         
-        judge_llm = setup_qwen_llm("qwen-max", max_tokens=2048) 
+        # 将动态的 judge_llm 传入评估器
         evaluator = RAGEvaluator(
             rag_pipeline=pipeline,
-            llm=judge_llm,
+            llm=judge_llm, 
             embed_model=embed_model
         )
 
         try:
-            # 确保在 worker 线程中调用，不会阻塞主事件循环
+            # 适配 Prompt 语言
             asyncio.run(evaluator.adapt_metrics(language="chinese"))
         except Exception as e:
             logger.error(f"指标适配流程异常: {e}，实验将使用默认 Prompt 继续运行")
 
         # 2. 从 Langfuse 加载数据集
-        logger.info(f"从 Langfuse 加载数据集: {dataset_name}")
         try:
             lf_dataset = langfuse.get_dataset(dataset_name)
         except Exception as e:
-            raise ValueError(f"无法在 Langfuse 找到数据集: {dataset_name}。请确认该测试集是否已成功生成并同步。")
+            raise ValueError(f"无法在 Langfuse 找到数据集: {dataset_name}")
 
         agg_scores = {"faithfulness": [], "answer_relevancy": [], "context_recall": [], "context_precision": []}
 
@@ -207,19 +218,21 @@ def run_experiment_pipeline(db: Session, experiment_id: int):
             
             with item.run(
                 run_name=f"exp_{experiment_id}_{kb.name}",
-                run_description=f"Strategy: {params.get('strategy')}",
+                run_description=f"Strat: {params.get('strategy')} | Model: {student_model_name}",
                 run_metadata={
                     "experiment_id": experiment_id,
                     "knowledge_id": kb.id,
+                    "student_model": student_model_name,
+                    "judge_model": judge_model_name,
                     **params
                 }
             ) as trace:
                 
-                # A. 执行 RAG Pipeline
+                # A. 执行 RAG Pipeline (使用 Student LLM)
                 answer_result, docs = asyncio.run(pipeline.async_query(question))
                 retrieved_contexts = [d.page_content for d in docs]
                 
-                # B. 计算 Ragas 分数
+                # B. 计算 Ragas 分数 (使用 Judge LLM)
                 scores = asyncio.run(evaluator.score_single_item(
                     question=question,
                     answer=answer_result,
@@ -227,18 +240,16 @@ def run_experiment_pipeline(db: Session, experiment_id: int):
                     ground_truth=ground_truth
                 ))
                 
-                # 🟢 [关键修复] 强制转换为原生 float，防止 numpy 类型污染
                 safe_scores = {k: float(v) for k, v in scores.items()}
                 
-                # C. 上报分数到 Langfuse
+                # C. 上报分数
                 for metric_name, val in safe_scores.items():
                     trace.score(name=metric_name, value=val)
                     if metric_name in agg_scores:
                         agg_scores[metric_name].append(val)
 
-        # 4. 计算平均分并更新 DB
+        # 4. 计算平均分
         def avg(lst):
-            # 再次确保结果是原生 float
             return float(sum(lst) / len(lst)) if lst else 0.0
 
         exp.faithfulness = avg(agg_scores["faithfulness"])
@@ -249,13 +260,11 @@ def run_experiment_pipeline(db: Session, experiment_id: int):
         exp.status = "COMPLETED"
         db.add(exp)
         db.commit()
-        logger.info(f"实验 {experiment_id} 完成。Avg Scores: Faith={exp.faithfulness:.2f}")
+        logger.info(f"实验 {experiment_id} 完成。")
 
     except Exception as e:
         logger.error(f"实验 {experiment_id} 失败: {e}", exc_info=True)
-        # 事务回滚防止污染
         db.rollback()
-        # 重新获取 exp 对象以记录错误
         exp = db.get(Experiment, experiment_id)
         if exp:
             exp.status = "FAILED"
