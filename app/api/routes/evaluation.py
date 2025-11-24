@@ -12,7 +12,7 @@ from app.domain.models import (
 )
 from pydantic import BaseModel
 
-from app.services import evaluation_crud
+from app.services.evaluation import evaluation_crud
 
 router = APIRouter()
 

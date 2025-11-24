@@ -1,17 +1,12 @@
 # app/services/evaluation_service.py
 import asyncio
-import json
 import logging
-import pandas as pd
-import io
 import nest_asyncio
-from typing import List, Any, cast
-import ast # 用于安全地把字符串转回列表
-
+import tempfile
+from pathlib import Path
+from typing import List
 from sqlmodel import Session
 from langfuse import Langfuse
-from langchain_core.documents import Document
-from datasets import Dataset
 
 # 复用已有的 Ragas 逻辑
 from ragas.testset import TestsetGenerator
@@ -20,19 +15,14 @@ from ragas.llms import LangchainLLMWrapper
 
 # 复用项目基础设施
 from app.core.config import settings
-from app.domain.models import Testset, Experiment, Knowledge, KnowledgeStatus
+from app.domain.models import Testset, Experiment
 from app.services.factories import setup_embed_model, setup_qwen_llm
-from app.services.file_storage import save_bytes_to_minio, get_file_from_minio
+from app.services.file_storage import save_bytes_to_minio, get_minio_client
 from app.services.loader import load_single_document
-from app.services.retrieval import VectorStoreManager, RetrievalService
+from app.services.retrieval import VectorStoreManager
 from app.services.pipelines import RAGPipeline
 from app.services.generation import QAService
-from app.services.file_storage import get_minio_client, save_bytes_to_minio, get_file_from_minio
-import tempfile
-from pathlib import Path
-
-# 复用 Evaluator 类
-from evaluation.runner import RAGEvaluator
+from app.services.evaluation.runner import RAGEvaluator
 
 logger = logging.getLogger(__name__)
 
@@ -190,12 +180,18 @@ def run_experiment_pipeline(db: Session, experiment_id: int):
             strategy=params.get("strategy", "default")
         )
         
-        judge_llm = setup_qwen_llm("qwen-max") 
+        judge_llm = setup_qwen_llm("qwen-max", max_tokens=4096) 
         evaluator = RAGEvaluator(
             rag_pipeline=pipeline,
             llm=judge_llm,
             embed_model=embed_model
         )
+
+        try:
+            # 确保在 worker 线程中调用，不会阻塞主事件循环
+            asyncio.run(evaluator.adapt_metrics(language="chinese"))
+        except Exception as e:
+            logger.error(f"指标适配流程异常: {e}，实验将使用默认 Prompt 继续运行")
 
         # 2. 从 Langfuse 加载数据集
         logger.info(f"从 Langfuse 加载数据集: {dataset_name}")

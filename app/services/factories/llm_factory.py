@@ -3,9 +3,9 @@ from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
 import os
 import logging
-
+from typing import Optional
 logger = logging.getLogger(__name__)
-def setup_qwen_llm(model_name: str):
+def setup_qwen_llm(model_name: str, max_tokens: Optional[int] = None):
     """
     配置并返回大语言模型 (LLM) 实例。
 
@@ -31,7 +31,8 @@ def setup_qwen_llm(model_name: str):
         api_key=SecretStr(dashscope_api_key), # 使用 SecretStr 避免密钥在日志中意外泄露
         base_url=base_url,
         model_kwargs=model_kwargs,
-        streaming=True
+        streaming=True,
+        max_tokens=max_tokens #type: ignore
     )
     logger.info(f"LLM 设置完成 模型名称: {model_name}")
     return llm

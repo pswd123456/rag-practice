@@ -11,7 +11,7 @@ from app.core.logging_setup import setup_logging
 
 from app.services.ingest.processor import process_document_pipeline
 from app.services.knowledge_crud import delete_knowledge_pipeline 
-from app.services.evaluation_service import generate_testset_pipeline, run_experiment_pipeline
+from app.services.evaluation.evaluation_service import generate_testset_pipeline, run_experiment_pipeline
 
 # --- 1. 初始化 Worker 日志 ---
 setup_logging(str(settings.LOG_FILE_PATH), log_level="INFO")
