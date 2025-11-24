@@ -159,10 +159,13 @@ def get_testset_status(ts_id: int):
         pass
     return None
 
-def create_testset(name: str, doc_ids: list):
+# [修改] 增加 generator_model 参数
+def create_testset(name: str, doc_ids: list, generator_model: str = "qwen-max"):
     try:
         res = httpx.post(f"{API_BASE_URL}/evaluation/testsets", json={
-            "name": name, "source_doc_ids": doc_ids
+            "name": name, 
+            "source_doc_ids": doc_ids,
+            "generator_llm": generator_model # [新增]
         })
         if res.status_code == 200:
             return True, res.text 

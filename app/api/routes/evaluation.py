@@ -20,6 +20,7 @@ router = APIRouter()
 class TestsetCreateRequest(BaseModel):
     name: str
     source_doc_ids: List[int] # 基于哪些文档生成
+    generator_llm: str = "qwen-max" # [新增] 指定生成数据的模型
 
 class ExperimentCreateRequest(BaseModel):
     knowledge_id: int
@@ -42,7 +43,7 @@ async def create_generation_task(
     testset = Testset(
         name=req.name,
         file_path="", # 暂时为空，Worker 生成后会更新
-        description="Generating...",
+        description=f"Generating with {req.generator_llm}...", # [修改] 记录一下模型
         status="GENERATING"
     )
     db.add(testset)
@@ -52,8 +53,8 @@ async def create_generation_task(
     # 2. 推送任务到 Redis
     try:
         redis = await create_pool(RedisSettings(host=settings.REDIS_HOST, port=settings.REDIS_PORT))
-        # 注意：这里传递的是 list[int]，Worker 那边要能接收
-        await redis.enqueue_job("generate_testset_task", testset.id, req.source_doc_ids)
+        # [修改] 传递 generator_llm 给 worker
+        await redis.enqueue_job("generate_testset_task", testset.id, req.source_doc_ids, req.generator_llm)
         await redis.close()
     except Exception as e:
         # 回滚

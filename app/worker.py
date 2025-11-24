@@ -41,11 +41,12 @@ def _sync_delete_knowledge_wrapper(knowledge_id: int):
         except Exception as e:
             logger.error(f"[Task] 知识库删除异常 (ID {knowledge_id}): {e}", exc_info=True)
 
-def _sync_generate_testset_wrapper(testset_id: int, source_doc_ids: List[int]):
-    logger.info(f"[Task] 开始生成测试集: ID {testset_id}")
+def _sync_generate_testset_wrapper(testset_id: int, source_doc_ids: List[int], generator_model: str):
+    logger.info(f"[Task] 开始生成测试集: ID {testset_id} (Model: {generator_model})")
     with Session(engine) as db:
         try:
-            generate_testset_pipeline(db, testset_id, source_doc_ids)
+            # [修改] 透传 generator_model
+            generate_testset_pipeline(db, testset_id, source_doc_ids, generator_model)
         except Exception as e:
             logger.error(f"[Task] 测试集生成异常 (ID {testset_id}): {e}", exc_info=True)
 
@@ -69,8 +70,9 @@ async def delete_knowledge_task(ctx: Any, knowledge_id: int):
 delete_knowledge_task.max_tries = 3 # type: ignore
 delete_knowledge_task.retry_delay = 2 # type: ignore
 
-async def generate_testset_task(ctx: Any, testset_id: int, source_doc_ids: List[int]):
-    await asyncio.to_thread(_sync_generate_testset_wrapper, testset_id, source_doc_ids)
+async def generate_testset_task(ctx: Any, testset_id: int, source_doc_ids: List[int], generator_model: str = "qwen-max"):
+    # [修改] 接收参数
+    await asyncio.to_thread(_sync_generate_testset_wrapper, testset_id, source_doc_ids, generator_model)
 generate_testset_task.max_tries = 3 # type: ignore
 generate_testset_task.retry_delay = 10 # type: ignore
 

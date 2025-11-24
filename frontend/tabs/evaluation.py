@@ -175,9 +175,6 @@ def render_evaluation_tab(selected_kb):
                 st.info("当前知识库暂无实验记录。")
 
     with eval_tab2:
-        # 保持原有的测试集管理代码不变，为了简洁这里不重复粘贴
-        # 但在真实环境中，你需要保留 render_evaluation_tab 的后半部分
-        # 这里我重新粘贴一下这部分代码以确保文件完整性
         st.info("基于当前知识库的文档生成测试集。")
         with st.expander("✨ 生成新测试集", expanded=True):
             current_docs = api.get_documents(selected_kb['id'])
@@ -190,11 +187,20 @@ def render_evaluation_tab(selected_kb):
                     selected_docs = st.multiselect("选择源文档", list(doc_options.keys()))
                     selected_doc_ids = [doc_options[name] for name in selected_docs]
                     
+                    # [新增] 模型选择
+                    ts_generator_model = st.selectbox(
+                        "生成模型 (Generator)", 
+                        ["qwen-max", "qwen-plus", "google/gemini-3-pro-preview-free"],
+                        index=0,
+                        help="用于生成 QA 对的模型。推荐使用较强的模型 (如 Qwen-Max) 以保证数据质量。"
+                    )
+                    
                     if st.form_submit_button("提交生成任务"):
                         if not ts_name or not selected_doc_ids:
                             st.error("请填写名称并选择文档。")
                         else:
-                            success, msg = api.create_testset(ts_name, selected_doc_ids)
+                            # [修改] 传递 ts_generator_model
+                            success, msg = api.create_testset(ts_name, selected_doc_ids, ts_generator_model)
                             if success:
                                 ts_id = msg
                                 st.toast(f"任务已提交 (ID: {ts_id})，开始生成...", icon="🚀")
@@ -228,7 +234,9 @@ def render_evaluation_tab(selected_kb):
                 col1, col2, col3, col4 = st.columns([3, 2, 1, 1])
                 with col1:
                     st.markdown(f"**{ts['name']}** (ID: {ts['id']})")
-                    st.caption(f"路径: `{ts['file_path']}`")
+                    # 显示更丰富的描述（包含模型信息）
+                    st.caption(f"{ts.get('description', '')}")
+                    # st.caption(f"路径: `{ts['file_path']}`")
                 with col2:
                     status = ts.get('status', 'COMPLETED')
                     if status == 'COMPLETED':

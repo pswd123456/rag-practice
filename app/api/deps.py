@@ -11,6 +11,10 @@ from app.services.generation import QAService
 from app.services.pipelines import RAGPipeline
 from app.services.retrieval import VectorStoreManager
 from app.domain.models import Knowledge
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 def get_db_session() -> Generator[Session, None, None]:
     yield from get_session()
@@ -47,6 +51,9 @@ def get_rag_pipeline_factory(
             # 覆盖为特定知识库的配置
             collection_name = f"kb_{knowledge.id}"
             embed_model_name = knowledge.embed_model
+
+        else:
+            logger.info(f"没有找到可用的kb, kb_id:{knowledge_id}")
 
         # 4. 初始化 Manager 和 Pipeline
         embed_model = setup_embed_model(embed_model_name)
