@@ -102,7 +102,7 @@ def get_logging_config(log_file_path: str, log_level: str = "INFO") -> Dict[str,
                 'propagate': False
             },
             'uvicorn.access': {
-                'level': 'INFO',
+                'level': 'WARNING',
                 'handlers': ['console', 'file'],
                 'propagate': False
             },
