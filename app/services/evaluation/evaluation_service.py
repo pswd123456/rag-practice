@@ -69,10 +69,8 @@ def generate_testset_pipeline(db: Session, testset_id: int, source_doc_ids: List
         if not langchain_docs:
             raise ValueError("没有加载到任何有效文档，无法生成测试集")
 
-        # 2. 初始化 Generator (复用 testset.py 的逻辑)
-        # 注意：生成测试集通常需要较强的模型 (Generator LLM)
-        # 这里暂时复用 qwen-flash，实际生产建议换成 qwen-max 或 gpt-4
-        generator_llm = setup_qwen_llm("qwen-max") # 建议用强模型
+        # 2. 初始化 Generator
+        generator_llm = setup_qwen_llm("qwen-max")
         generator_embed = setup_embed_model("text-embedding-v4")
         
         generator = TestsetGenerator(

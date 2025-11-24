@@ -154,15 +154,3 @@ class RAGEvaluator:
         
         return scores
     
-def prepare_pipeline(force_rebuild: bool = False):
-    collection_name = settings.CHROMADB_COLLECTION_NAME
-    embeddings = setup_embed_model("text-embedding-v4")
-    vector_store = build_or_get_vector_store(collection_name, embeddings, force_rebuild=force_rebuild)
-    llm = setup_qwen_llm("qwen-flash")
-
-    retriever = vector_store.as_retriever()
-    rag_pipeline = RAGPipeline(
-        retrieval_service=RetrievalService(retriever),
-        qa_service=QAService(llm),
-    )
-    return rag_pipeline, llm, embeddings
