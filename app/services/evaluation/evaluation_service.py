@@ -32,7 +32,7 @@ import tempfile
 from pathlib import Path
 
 # 复用 Evaluator 类
-from evaluation.runner import RAGEvaluator
+from app.services.evaluation.runner import RAGEvaluator
 
 logger = logging.getLogger(__name__)
 

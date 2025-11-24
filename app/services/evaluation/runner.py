@@ -30,7 +30,7 @@ from app.services.generation import QAService
 from app.services.ingest import build_or_get_vector_store
 from app.services.pipelines import RAGPipeline
 from app.services.retrieval import RetrievalService
-from evaluation.config import EvaluationConfig, get_default_config
+from app.services.evaluation.config import EvaluationConfig, get_default_config
 
 warnings.filterwarnings("ignore", message=".*Torch was not compiled with flash attention.*")
 
