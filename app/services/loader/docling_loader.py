@@ -9,10 +9,9 @@ from langchain_core.documents import Document
 # Docling
 from docling.document_converter import DocumentConverter, PdfFormatOption
 from docling.datamodel.base_models import InputFormat
-# [修改] 引入 TableStructureOptions
-from docling.datamodel.pipeline_options import PdfPipelineOptions, TableStructureOptions, TesseractOcrOptions
-from docling.datamodel.accelerator_options import AcceleratorOptions, AcceleratorDevice 
-from docling.datamodel.pipeline_options import TableFormerMode
+from docling.datamodel.pipeline_options import PdfPipelineOptions
+from docling.datamodel.accelerator_options import AcceleratorOptions, AcceleratorDevice
+
 logger = logging.getLogger(__name__)
 
 class DoclingLoader:
@@ -27,26 +26,12 @@ class DoclingLoader:
 
     def _init_converter(self) -> DocumentConverter:
         """
-        初始化 Converter，配置 GPU 加速与增强表格识别
+        初始化 Converter，配置 GPU 加速（如果可用）
         """
         # 配置 Pipeline 选项
         pipeline_options = PdfPipelineOptions()
-        pipeline_options.do_ocr = True  # 开启 OCR
+        pipeline_options.do_ocr = True  # 开启 OCR 以处理扫描件
         pipeline_options.do_table_structure = True # 开启表格结构提取
-        
-        pipeline_options.ocr_options = TesseractOcrOptions(
-            lang=["chi_sim", "eng"]
-        )
-        
-        # 增强表格配置
-        # do_cell_matching: 强制进行单元格匹配，解决合并单元格错位问题
-        pipeline_options.table_structure_options = TableStructureOptions(
-            do_cell_matching=True,             # 强力匹配单元格
-            mode=TableFormerMode.ACCURATE      # [关键] 使用高精度模式 (ACCURATE) 而不是 FAST
-        )
-        # 提高渲染分辨率 (默认约 72 DPI，提高到 2.0 倍约 144 DPI)
-        # 这有助于识别密集的表格线，但会增加显存消耗
-        pipeline_options.images_scale = 3.0
 
         # GPU 加速配置
         if torch.cuda.is_available():
@@ -72,6 +57,8 @@ class DoclingLoader:
     def load(self) -> List[Document]:
         """
         加载文档并转换为 LangChain Document 对象列表。
+        目前 Docling 通常将整个文档转换为一个完整的 Markdown，
+        这里我们将其封装为一个 Document，后续由 Splitter 进行切分。
         """
         if not Path(self.file_path).exists():
             raise FileNotFoundError(f"文件不存在: {self.file_path}")
@@ -85,30 +72,14 @@ class DoclingLoader:
             
             # 导出为 Markdown
             markdown_text = doc_content.export_to_markdown()
-
-            # =============== 🐛 DEBUG START ===============
-            # 既然是开发环境，直接把它写到根目录方便查看
-            # 文件名带上时间戳或随机数防止覆盖，或者干脆固定名字方便反复刷
-            debug_filename = f"debug_docling_output_{Path(self.file_path).name}.md"
-            
-            # 获取项目根目录 (假设容器内 workdir 是 /app)
-            # 也可以直接写相对路径，因为 worker 启动时的 cwd 就是 /app
-            with open(debug_filename, "w", encoding="utf-8") as f:
-                f.write(markdown_text)
-            
-            logger.info(f"🐛 [DEBUG] Markdown 已保存至根目录: {debug_filename}")
-            # =============== 🐛 DEBUG END =================
-            
-            # [新增] 统计表格数量用于 Debug
-            table_count = len([item for item in doc_content.tables])
-            logger.info(f"📊 文档中检测到的表格数量: {table_count}")
             
             # 提取元数据
+            # Docling 的元数据可能比较分散，我们取一些基础的
             metadata = {
                 "source": str(self.file_path),
                 "filename": Path(self.file_path).name,
                 "page_count": len(doc_content.pages) if hasattr(doc_content, "pages") else 0,
-                "table_count": table_count, # 记录表格数
+                # 可以在这里添加更多 Docling 特有的元数据，如表格数量等
             }
 
             logger.info(f"Docling 解析完成，生成 Markdown 长度: {len(markdown_text)}")
