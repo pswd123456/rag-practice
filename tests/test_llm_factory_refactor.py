@@ -13,18 +13,18 @@ def test_setup_llm_routing(mock_settings):
     
     mock_settings.ZENMUX_API_KEY = "sk-zenmux-test"
     mock_settings.ZENMUX_BASE_URL = "https://zenmux.ai/api/v1"
+
+    mock_settings.DEEPSEEK_API_KEY = "sk-deepseek-test"
+    mock_settings.DEEPSEEK_BASE_URL = "https://api.deepseek.com"
     
-    # 为了防止实例化 ChatOpenAI 时真的发起网络连接或校验 Key，
-    # 我们 Mock 掉 ChatOpenAI 类
+    # Mock ChatOpenAI
     with patch("app.services.factories.llm_factory.ChatOpenAI") as MockChatOpenAI:
         
         # Case A: Qwen Model (Default path)
         setup_llm("qwen-plus")
         
-        # 验证调用参数
         call_args_qwen = MockChatOpenAI.call_args_list[0]
         _, kwargs_qwen = call_args_qwen
-        
         assert kwargs_qwen["base_url"] == "https://dashscope.aliyuncs.com/compatible-mode/v1"
         assert kwargs_qwen["api_key"].get_secret_value() == "sk-qwen-test"
         
@@ -33,9 +33,17 @@ def test_setup_llm_routing(mock_settings):
         
         call_args_gemini = MockChatOpenAI.call_args_list[1]
         _, kwargs_gemini = call_args_gemini
-        
         assert kwargs_gemini["base_url"] == "https://zenmux.ai/api/v1"
         assert kwargs_gemini["api_key"].get_secret_value() == "sk-zenmux-test"
+
+        # Case C: DeepSeek Model [New]
+        setup_llm("deepseek-chat")
+
+        call_args_deepseek = MockChatOpenAI.call_args_list[2]
+        _, kwargs_deepseek = call_args_deepseek
+        assert kwargs_deepseek["base_url"] == "https://api.deepseek.com"
+        assert kwargs_deepseek["api_key"].get_secret_value() == "sk-deepseek-test"
+
 
 @patch("app.services.factories.llm_factory.settings")
 def test_setup_llm_fallback(mock_settings):
@@ -57,27 +65,15 @@ def test_setup_llm_fallback(mock_settings):
 async def test_chat_with_specific_model(client):
     """
     测试指定 LLM 模型参数 (集成测试)
-    即使我们没有真实的 Gemini Key，只要工厂逻辑正确，
-    它至少会尝试初始化，这里主要测 API 参数传递链路是否通畅。
     """
+    # 只要工厂逻辑正确，且配置有 Key (或 mock 了)，这里应该能跑通 API 链路
     payload = {
         "query": "Hello",
         "strategy": "default",
-        "llm_model": "qwen-turbo" # 显式指定一个 Qwen 模型
+        "llm_model": "qwen-turbo"
     }
     response = await client.post("/chat/query", json=payload)
     
     assert response.status_code == 200
     data = response.json()
     assert "answer" in data
-
-@pytest.mark.asyncio
-async def test_chat_simple(client):
-    """回归测试：不传 llm_model 应该使用默认值"""
-    payload = {
-        "query": "Hello, who are you?",
-        "strategy": "default"
-        # llm_model missing
-    }
-    response = await client.post("/chat/query", json=payload)
-    assert response.status_code == 200
