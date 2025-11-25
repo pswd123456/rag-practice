@@ -1,5 +1,5 @@
 # 使用 Python 3.10 Slim 版本作为基础镜像
-FROM python:3.10-slim
+FROM python:3.11-slim
 
 WORKDIR /app
 
@@ -9,7 +9,7 @@ WORKDIR /app
 # 替换 Debian 系统源为阿里源 (加速 apt install)
 RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources
 
-# 安装必要的系统依赖 (保留了你之前的列表)
+# [修改] 安装必要的系统依赖 (新增 tesseract, poppler 及其它 docling 依赖)
 RUN apt-get update && apt-get install -y \
     build-essential \
     libpq-dev \
@@ -17,24 +17,28 @@ RUN apt-get update && apt-get install -y \
     libgl1 \
     libglib2.0-0 \
     git \
+    poppler-utils \
+    tesseract-ocr \
+    tesseract-ocr-chi-sim \
     && rm -rf /var/lib/apt/lists/*
 
 # -----------------------------------------------------------------
 # 2. 依赖层优化 (引入 uv)
 # -----------------------------------------------------------------
-# [关键] 从官方镜像中直接复制 uv 二进制文件 (这是最安全、最新的安装方式)
+# 从官方镜像中直接复制 uv 二进制文件
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 
-RUN uv pip install --system torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+# [修改] 切换为 CUDA 12.1 的 Index URL (适配 RTX 2060)
+# 注意：这会下载较大的 CUDA 运行时，构建时间会变长
+RUN uv pip install --system torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 
 COPY requirements.txt .
 
-# [关键] 使用 uv 替代 pip 安装依赖
-# --system    : 直接安装到系统 Python 环境中 (Docker 容器内不需要再创建 venv)
-# --index-url : 强制指定阿里源
-# --mount     : 挂载缓存目录，确保下一次构建更快
+ENV UV_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
+
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --system -r requirements.txt
+
 # -----------------------------------------------------------------
 # 3. 源码层
 # -----------------------------------------------------------------
