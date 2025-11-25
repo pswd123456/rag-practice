@@ -48,6 +48,8 @@ class Settings(BaseSettings):
     DASHSCOPE_BASE_URL: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     DASHSCOPE_API_KEY: str
 
+    DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"
+    DEEPSEEK_API_KEY: str
     # db
     CHROMA_SERVER_HOST: str = "chroma"
     CHROMA_SERVER_PORT: int = 8000
@@ -59,7 +61,7 @@ class Settings(BaseSettings):
     CHUNK_OVERLAP: int
 
     # evaluation
-    TESTSET_SIZE: int
+    TESTSET_SIZE: int 
     
     # langfuse
     LANGFUSE_PUBLIC_KEY: str
