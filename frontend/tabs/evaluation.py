@@ -44,7 +44,7 @@ def render_evaluation_tab(selected_kb):
                     # [新增] 裁判模型 (Judge Model)
                     exp_judge_llm = st.selectbox(
                         "裁判 LLM (评分者)", 
-                        ["qwen-max", "google/gemini-3-pro-preview-free"], # Judge 通常需要强模型
+                        ["qwen-max", "qwen-plus", "qwen-flash", "google/gemini-3-pro-preview-free"], # Judge 通常需要强模型
                         index=0,
                         help="Ragas 评估需要较强的推理能力，建议使用 Qwen-Max 或 Gemini-Pro/Flash"
                     )
