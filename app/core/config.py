@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     # --- Redis 配置 ---
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
+
+    #queue name
+    DEFAULT_QUEUE_NAME: str = "arq:queue"
+    DOCLING_QUEUE_NAME: str = "docling_queue"
     
     # --- 1. 从 .env 读取的 "基础" 变量 ---
     # Pydantic 会自动进行类型转换和验证

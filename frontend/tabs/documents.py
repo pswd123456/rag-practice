@@ -5,7 +5,10 @@ import api
 def render_documents_tab(selected_kb):
     with st.container():
         st.subheader("📤 上传文件")
-        uploaded_file = st.file_uploader("支持 PDF/TXT/MD", type=["pdf", "txt", "md"])
+        uploaded_file = st.file_uploader(
+            "支持 PDF/DOCX/TXT/MD", 
+            type=["pdf", "docx", "doc", "txt", "md"]
+        )
         if uploaded_file and st.button("开始上传", type="primary"):
             files = {"file": (uploaded_file.name, uploaded_file, uploaded_file.type)}
             

@@ -1,3 +1,4 @@
+import os
 import asyncio
 import logging
 from typing import Any, List
@@ -59,6 +60,15 @@ def _sync_run_experiment_wrapper(experiment_id: int):
             logger.error(f"[Task] 实验运行异常 (ID {experiment_id}): {e}", exc_info=True)
 
 # --- Worker 任务定义 ---
+async def process_document_task(ctx: Any, doc_id: int):
+    # 复用同一个 Pipeline 逻辑，内部会自动判断 Loader
+    await asyncio.to_thread(_sync_process_wrapper, doc_id)
+
+# 增加超时时间，适应 Docling 的处理速度
+process_document_task.max_tries = 3
+process_document_task.retry_delay = 5
+# Docling 处理大文件可能很慢，给 10 分钟超时
+process_document_task.timeout = 600
 
 async def process_document_task(ctx: Any, doc_id: int):
     await asyncio.to_thread(_sync_process_wrapper, doc_id)
@@ -94,5 +104,8 @@ class WorkerSettings:
         host=settings.REDIS_HOST, 
         port=settings.REDIS_PORT
         )
+    
+    queue_name = os.getenv("ARQ_QUEUES", settings.DEFAULT_QUEUE_NAME)
+
     on_startup = startup
     on_shutdown = shutdown

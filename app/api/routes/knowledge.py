@@ -1,5 +1,6 @@
 import logging
 from typing import Sequence
+from pathlib import Path
 
 from fastapi import APIRouter, Body, Depends, HTTPException, UploadFile, File
 from sqlmodel import Session, select, desc
@@ -143,7 +144,26 @@ async def upload_file(
     #推送任务到redis
     try:
         redis = await create_pool(RedisSettings(host=settings.REDIS_HOST, port=settings.REDIS_PORT))
-        await redis.enqueue_job("process_document_task", doc.id)
+        
+        # 检查文件后缀
+        suffix = Path(file_name).suffix.lower()
+        if suffix in [".pdf", ".docx", ".doc"]:
+            # 路由到 Docling 专用队列 (GPU Worker)
+            logger.info(f"文件 {file_name} 为复杂文档，路由至 {settings.DOCLING_QUEUE_NAME}")
+            await redis.enqueue_job(
+                "process_document_task", 
+                doc.id, 
+                _queue_name=settings.DOCLING_QUEUE_NAME
+            )
+        else:
+            # 路由到默认队列 (CPU Worker)
+            logger.info(f"文件 {file_name} 为普通文档，路由至 {settings.DEFAULT_QUEUE_NAME}")
+            await redis.enqueue_job(
+                "process_document_task", 
+                doc.id,
+                _queue_name=settings.DEFAULT_QUEUE_NAME
+            )
+            
         await redis.close()
     except Exception as e:
         doc.status = DocStatus.FAILED
