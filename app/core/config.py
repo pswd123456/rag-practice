@@ -49,7 +49,7 @@ class Settings(BaseSettings):
     DASHSCOPE_API_KEY: str
 
     # db
-    CHROMA_SERVER_HOST: str  
+    CHROMA_SERVER_HOST: str = "chroma"
     CHROMA_SERVER_PORT: int = 8000
     DATABASE_URL: str
 
