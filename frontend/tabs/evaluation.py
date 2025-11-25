@@ -34,24 +34,37 @@ def render_evaluation_tab(selected_kb):
                     exp_top_k = st.number_input("Top K", min_value=1, max_value=50, value=3, step=1)
                     exp_strategy = st.selectbox("检索策略", ["default", "hybrid", "rerank"])
                     
-                    # [修改] 学生模型 (Student Model)
+                    # [修改] 学生模型 (Student Model) 添加 DeepSeek
                     exp_student_llm = st.selectbox(
                         "学生 LLM (回答者)", 
-                        ["qwen-flash", "qwen-plus", "qwen-max", "google/gemini-3-pro-preview-free"],
+                        [
+                            "qwen-flash", 
+                            "qwen-plus", 
+                            "qwen-max", 
+                            "deepseek-chat",
+                            "deepseek-reasoner",
+                            "google/gemini-3-pro-preview-free"
+                        ],
                         index=0
                     )
                     
-                    # [新增] 裁判模型 (Judge Model)
+                    # [修改] 裁判模型 (Judge Model)
                     exp_judge_llm = st.selectbox(
                         "裁判 LLM (评分者)", 
-                        ["qwen-max", "qwen-plus", "qwen-flash", "google/gemini-3-pro-preview-free"], # Judge 通常需要强模型
+                        [
+                            "qwen-flash", 
+                            "qwen-plus", 
+                            "qwen-max", 
+                            "deepseek-chat",
+                            "deepseek-reasoner",
+                            "google/gemini-3-pro-preview-free"
+                        ],
                         index=0,
-                        help="Ragas 评估需要较强的推理能力，建议使用 Qwen-Max 或 Gemini-Pro/Flash"
+                        help="Ragas 评估需要较强的推理能力，建议使用 Qwen-Max, DeepSeek-V3 或 Gemini-Pro"
                     )
                     
                     if st.form_submit_button("开始评估", type="primary"):
                         if selected_ts_id:
-                            # [修改] 组装参数
                             params = {
                                 "top_k": exp_top_k, 
                                 "strategy": exp_strategy, 
@@ -126,7 +139,7 @@ def render_evaluation_tab(selected_kb):
                 h1.markdown("**ID**")
                 h2.markdown("**状态**")
                 h3.markdown("**各项指标**")
-                h4.markdown("**模型配置**") # 变宽一点显示模型名
+                h4.markdown("**模型配置**")
                 h5.markdown("**操作**")
                 st.divider()
 
@@ -155,7 +168,6 @@ def render_evaluation_tab(selected_kb):
                         c3.caption("-")
                         
                     params = exp.get("runtime_params", {}) or {}
-                    # [修改] 增强显示
                     student = params.get("student_model") or params.get("llm") or "qwen-flash"
                     judge = params.get("judge_model") or "qwen-max"
                     param_str = f"**Student**: {student}\n**Judge**: {judge}\nTopK: {params.get('top_k')}"
@@ -187,19 +199,18 @@ def render_evaluation_tab(selected_kb):
                     selected_docs = st.multiselect("选择源文档", list(doc_options.keys()))
                     selected_doc_ids = [doc_options[name] for name in selected_docs]
                     
-                    # [新增] 模型选择
+                    # [修改] 模型选择添加 DeepSeek
                     ts_generator_model = st.selectbox(
                         "生成模型 (Generator)", 
-                        ["qwen-max", "qwen-plus", "google/gemini-3-pro-preview-free"],
+                        ["qwen-max", "qwen-plus", "deepseek-chat", "google/gemini-3-pro-preview-free"],
                         index=0,
-                        help="用于生成 QA 对的模型。推荐使用较强的模型 (如 Qwen-Max) 以保证数据质量。"
+                        help="推荐使用较强的模型 (如 Qwen-Max, DeepSeek-V3) 以保证数据质量。"
                     )
                     
                     if st.form_submit_button("提交生成任务"):
                         if not ts_name or not selected_doc_ids:
                             st.error("请填写名称并选择文档。")
                         else:
-                            # [修改] 传递 ts_generator_model
                             success, msg = api.create_testset(ts_name, selected_doc_ids, ts_generator_model)
                             if success:
                                 ts_id = msg
@@ -234,9 +245,7 @@ def render_evaluation_tab(selected_kb):
                 col1, col2, col3, col4 = st.columns([3, 2, 1, 1])
                 with col1:
                     st.markdown(f"**{ts['name']}** (ID: {ts['id']})")
-                    # 显示更丰富的描述（包含模型信息）
                     st.caption(f"{ts.get('description', '')}")
-                    # st.caption(f"路径: `{ts['file_path']}`")
                 with col2:
                     status = ts.get('status', 'COMPLETED')
                     if status == 'COMPLETED':

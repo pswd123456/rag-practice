@@ -5,17 +5,23 @@ def render_chat_tab(selected_kb):
     # 1. 顶部配置区
     col_s1, col_s2, col_s3 = st.columns([1, 1, 3])
     with col_s1:
-        # [修改] 添加模型选择
+        # [修改] 添加 DeepSeek 模型
         llm_model = st.selectbox(
             "对话模型", 
-            ["qwen-flash", "qwen-plus", "qwen-max", "google/gemini-3-pro-preview-free"],
+            [
+                "qwen-flash", 
+                "qwen-plus", 
+                "qwen-max", 
+                "deepseek-chat", 
+                "deepseek-reasoner",
+                "google/gemini-3-pro-preview-free"
+            ],
             index=0
         )
     with col_s2:
         strategy = st.selectbox("检索策略", ["default", "dense_only", "hybrid", "rerank"])
     with col_s3:
         use_stream = st.checkbox("流式输出", value=True)
-        # 稍微调整一下排版，让checkbox垂直居中
         st.write("") 
     
     if "messages" not in st.session_state:
@@ -50,7 +56,7 @@ def render_chat_tab(selected_kb):
                 "query": prompt,
                 "knowledge_id": selected_kb['id'],
                 "strategy": strategy,
-                "llm_model": llm_model # [新增] 传递选中的模型
+                "llm_model": llm_model # 传递选中的模型
             }
             
             full_response = ""
