@@ -12,6 +12,7 @@ alembic
 redis
 minio
 chromadb
+asyncpg
 
 # --- Async Tasks ---
 arq
@@ -50,3 +51,5 @@ pydantic-settings
 python-dotenv
 tenacity
 rich
+pytest
+pytest_asyncio

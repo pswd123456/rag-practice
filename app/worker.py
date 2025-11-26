@@ -4,10 +4,9 @@ import logging
 from typing import Any, List
 from arq import create_pool
 from arq.connections import RedisSettings
-from sqlmodel import Session
 
 from app.core.config import settings
-from app.db.session import engine
+from app.db.session import async_session_maker # 🟢 引入异步工厂
 from app.core.logging_setup import setup_logging
 
 from app.services.ingest.processor import process_document_pipeline
@@ -24,70 +23,51 @@ async def startup(ctx: Any):
 async def shutdown(ctx: Any):
     logger.info("👷 Worker 进程关闭...")
 
-# --- 同步包装器 (保持不变) ---
+# --- Worker 任务定义 (纯异步，无 Wrapper) ---
 
-def _sync_process_wrapper(doc_id: int):
+async def process_document_task(ctx: Any, doc_id: int):
     logger.info(f"[Task] 开始处理文档: ID {doc_id}")
-    with Session(engine) as db:
+    async with async_session_maker() as db:
         try:
-            process_document_pipeline(db, doc_id)
+            await process_document_pipeline(db, doc_id)
         except Exception as e:
             logger.error(f"[Task] 文档处理异常 (ID {doc_id}): {e}", exc_info=True)
 
-def _sync_delete_knowledge_wrapper(knowledge_id: int):
+# 增加超时时间
+process_document_task.max_tries = 3 # type: ignore
+process_document_task.retry_delay = 5 # type: ignore
+process_document_task.timeout = 600 # type: ignore
+
+async def delete_knowledge_task(ctx: Any, knowledge_id: int):
     logger.info(f"[Task] 开始删除知识库: ID {knowledge_id}")
-    with Session(engine) as db:
+    async with async_session_maker() as db:
         try:
-            delete_knowledge_pipeline(db, knowledge_id)
+            await delete_knowledge_pipeline(db, knowledge_id)
         except Exception as e:
             logger.error(f"[Task] 知识库删除异常 (ID {knowledge_id}): {e}", exc_info=True)
 
-def _sync_generate_testset_wrapper(testset_id: int, source_doc_ids: List[int], generator_model: str):
-    logger.info(f"[Task] 开始生成测试集: ID {testset_id} (Model: {generator_model})")
-    with Session(engine) as db:
-        try:
-            # [修改] 透传 generator_model
-            generate_testset_pipeline(db, testset_id, source_doc_ids, generator_model)
-        except Exception as e:
-            logger.error(f"[Task] 测试集生成异常 (ID {testset_id}): {e}", exc_info=True)
-
-def _sync_run_experiment_wrapper(experiment_id: int):
-    logger.info(f"[Task] 开始运行实验: ID {experiment_id}")
-    with Session(engine) as db:
-        try:
-            run_experiment_pipeline(db, experiment_id)
-        except Exception as e:
-            logger.error(f"[Task] 实验运行异常 (ID {experiment_id}): {e}", exc_info=True)
-
-# --- Worker 任务定义 ---
-async def process_document_task(ctx: Any, doc_id: int):
-    # 复用同一个 Pipeline 逻辑，内部会自动判断 Loader
-    await asyncio.to_thread(_sync_process_wrapper, doc_id)
-
-# 增加超时时间，适应 Docling 的处理速度
-process_document_task.max_tries = 3
-process_document_task.retry_delay = 5
-# Docling 处理大文件可能很慢，给 10 分钟超时
-process_document_task.timeout = 600
-
-async def process_document_task(ctx: Any, doc_id: int):
-    await asyncio.to_thread(_sync_process_wrapper, doc_id)
-process_document_task.max_tries = 3 # type: ignore
-process_document_task.retry_delay = 5 # type: ignore
-
-async def delete_knowledge_task(ctx: Any, knowledge_id: int):
-    await asyncio.to_thread(_sync_delete_knowledge_wrapper, knowledge_id)
 delete_knowledge_task.max_tries = 3 # type: ignore
 delete_knowledge_task.retry_delay = 2 # type: ignore
 
 async def generate_testset_task(ctx: Any, testset_id: int, source_doc_ids: List[int], generator_model: str = "qwen-max"):
-    # [修改] 接收参数
-    await asyncio.to_thread(_sync_generate_testset_wrapper, testset_id, source_doc_ids, generator_model)
+    logger.info(f"[Task] 开始生成测试集: ID {testset_id}")
+    async with async_session_maker() as db:
+        try:
+            await generate_testset_pipeline(db, testset_id, source_doc_ids, generator_model)
+        except Exception as e:
+            logger.error(f"[Task] 测试集生成异常 (ID {testset_id}): {e}", exc_info=True)
+
 generate_testset_task.max_tries = 3 # type: ignore
 generate_testset_task.retry_delay = 10 # type: ignore
 
 async def run_experiment_task(ctx: Any, experiment_id: int):
-    await asyncio.to_thread(_sync_run_experiment_wrapper, experiment_id)
+    logger.info(f"[Task] 开始运行实验: ID {experiment_id}")
+    async with async_session_maker() as db:
+        try:
+            await run_experiment_pipeline(db, experiment_id)
+        except Exception as e:
+            logger.error(f"[Task] 实验运行异常 (ID {experiment_id}): {e}", exc_info=True)
+
 run_experiment_task.max_tries = 3 # type: ignore
 run_experiment_task.retry_delay = 10 # type: ignore
 

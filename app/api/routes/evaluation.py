@@ -1,14 +1,14 @@
-# app/api/routes/evaluation.py
 from typing import List, Dict, Any, Optional
-from fastapi import APIRouter, Depends, HTTPException, Body
-from sqlmodel import Session, select, desc
+from fastapi import APIRouter, Depends, HTTPException
+from sqlmodel import select, desc
+from sqlmodel.ext.asyncio.session import AsyncSession # 🟢 引入 AsyncSession
 from arq import create_pool
 from arq.connections import RedisSettings
 
 from app.api import deps
 from app.core.config import settings
 from app.domain.models import (
-    Testset, Experiment, Knowledge, Document
+    Testset, Experiment, Knowledge
 )
 from pydantic import BaseModel
 
@@ -16,16 +16,16 @@ from app.services.evaluation import evaluation_crud
 
 router = APIRouter()
 
-# --- Schemas (临时定义在这里，也可移到 domain/schemas) ---
+# --- Schemas ---
 class TestsetCreateRequest(BaseModel):
     name: str
-    source_doc_ids: List[int] # 基于哪些文档生成
-    generator_llm: str = "qwen-max" # [新增] 指定生成数据的模型
+    source_doc_ids: List[int]
+    generator_llm: str = "qwen-max" 
 
 class ExperimentCreateRequest(BaseModel):
     knowledge_id: int
     testset_id: int
-    runtime_params: Dict[str, Any] = {} # {"top_k": 3, "strategy": "hybrid"}
+    runtime_params: Dict[str, Any] = {} 
 
 # -------------------------------------------------------
 # 1. Testset 管理
@@ -34,62 +34,58 @@ class ExperimentCreateRequest(BaseModel):
 @router.post("/testsets", response_model=int)
 async def create_generation_task(
     req: TestsetCreateRequest,
-    db: Session = Depends(deps.get_db_session)
+    db: AsyncSession = Depends(deps.get_db_session)
 ):
     """
     提交一个测试集生成任务
     """
-    # 1. 创建数据库记录 (占位)
+    # 1. 创建数据库记录
     testset = Testset(
         name=req.name,
-        file_path="", # 暂时为空，Worker 生成后会更新
-        description=f"Generating with {req.generator_llm}...", # [修改] 记录一下模型
+        file_path="", 
+        description=f"Generating with {req.generator_llm}...",
         status="GENERATING"
     )
     db.add(testset)
-    db.commit()
-    db.refresh(testset)
+    await db.commit() # 🟢 await
+    await db.refresh(testset) # 🟢 await
 
     # 2. 推送任务到 Redis
     try:
         redis = await create_pool(RedisSettings(host=settings.REDIS_HOST, port=settings.REDIS_PORT))
-        # [修改] 传递 generator_llm 给 worker
         await redis.enqueue_job("generate_testset_task", testset.id, req.source_doc_ids, req.generator_llm)
         await redis.close()
     except Exception as e:
         # 回滚
-        db.delete(testset)
-        db.commit()
+        await db.delete(testset) # ⚠️ db.delete 是同步方法，但 safe to call here? yes, it's state tracking
+        await db.commit() # 🟢 await
         raise HTTPException(status_code=500, detail=f"任务入队失败: {str(e)}")
 
     return testset.id
 
 @router.get("/testsets", response_model=List[Testset])
-def get_testsets(db: Session = Depends(deps.get_db_session)):
-    return db.exec(select(Testset).order_by(desc(Testset.created_at))).all()
+async def get_testsets(db: AsyncSession = Depends(deps.get_db_session)):
+    # 🟢 异步查询
+    result = await db.exec(select(Testset).order_by(desc(Testset.created_at)))
+    return result.all()
 
 @router.get("/testsets/{testset_id}", response_model=Testset)
-def get_testset(
+async def get_testset(
     testset_id: int,
-    db: Session = Depends(deps.get_db_session)
+    db: AsyncSession = Depends(deps.get_db_session)
 ):
-    """
-    获取单个测试集详情，用于前端轮询状态
-    """
-    ts = db.get(Testset, testset_id)
+    ts = await db.get(Testset, testset_id) # 🟢 await
     if not ts:
         raise HTTPException(status_code=404, detail="Testset not found")
     return ts
 
 @router.delete("/testsets/{testset_id}")
-def delete_testset_endpoint(
+async def delete_testset_endpoint(
     testset_id: int,
-    db: Session = Depends(deps.get_db_session)
+    db: AsyncSession = Depends(deps.get_db_session)
 ):
-    """
-    删除测试集 (同步删除 MinIO 文件和关联实验)
-    """
-    return evaluation_crud.delete_testset(db, testset_id)
+    # 🟢 await CRUD
+    return await evaluation_crud.delete_testset(db, testset_id)
 
 # -------------------------------------------------------
 # 2. Experiment 管理
@@ -98,14 +94,14 @@ def delete_testset_endpoint(
 @router.post("/experiments", response_model=int)
 async def create_experiment_task(
     req: ExperimentCreateRequest,
-    db: Session = Depends(deps.get_db_session)
+    db: AsyncSession = Depends(deps.get_db_session)
 ):
     """
     提交一个评测实验任务
     """
-    # 校验 KB 和 Testset 是否存在
-    kb = db.get(Knowledge, req.knowledge_id)
-    ts = db.get(Testset, req.testset_id)
+    # 校验 KB 和 Testset 是否存在 (🟢 await)
+    kb = await db.get(Knowledge, req.knowledge_id)
+    ts = await db.get(Testset, req.testset_id)
     if not kb or not ts:
         raise HTTPException(status_code=404, detail="Knowledge or Testset not found")
 
@@ -117,8 +113,8 @@ async def create_experiment_task(
         status="PENDING"
     )
     db.add(exp)
-    db.commit()
-    db.refresh(exp)
+    await db.commit() # 🟢 await
+    await db.refresh(exp) # 🟢 await
 
     # 2. 推送任务
     try:
@@ -129,45 +125,39 @@ async def create_experiment_task(
         exp.status = "FAILED"
         exp.error_message = str(e)
         db.add(exp)
-        db.commit()
+        await db.commit() # 🟢 await
         raise HTTPException(status_code=500, detail=f"任务入队失败: {str(e)}")
 
     return exp.id
 
 @router.get("/experiments", response_model=List[Experiment])
-def get_experiments(
+async def get_experiments(
     knowledge_id: Optional[int],
-    db: Session = Depends(deps.get_db_session)
+    db: AsyncSession = Depends(deps.get_db_session)
 ):
-    """
-    获取实验列表，支持按 Knowledge ID 筛选（画图用）
-    """
     query = select(Experiment)
     if knowledge_id:
         query = query.where(Experiment.knowledge_id == knowledge_id)
     
     query = query.order_by(desc(Experiment.created_at))
-    return db.exec(query).all()
+    # 🟢 异步查询
+    result = await db.exec(query)
+    return result.all()
 
 @router.get("/experiments/{experiment_id}", response_model=Experiment)
-def get_experiment(
+async def get_experiment(
     experiment_id: int,
-    db: Session = Depends(deps.get_db_session)
+    db: AsyncSession = Depends(deps.get_db_session)
 ):
-    """
-    获取单个实验详情，用于前端轮询
-    """
-    exp = db.get(Experiment, experiment_id)
+    exp = await db.get(Experiment, experiment_id) # 🟢 await
     if not exp:
         raise HTTPException(status_code=404, detail="Experiment not found")
     return exp
 
 @router.delete("/experiments/{experiment_id}")
-def delete_experiment_endpoint(
+async def delete_experiment_endpoint(
     experiment_id: int,
-    db: Session = Depends(deps.get_db_session)
+    db: AsyncSession = Depends(deps.get_db_session)
 ):
-    """
-    删除实验记录
-    """
-    return evaluation_crud.delete_experiment(db, experiment_id)
+    # 🟢 await CRUD
+    return await evaluation_crud.delete_experiment(db, experiment_id)

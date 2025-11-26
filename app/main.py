@@ -14,7 +14,7 @@ logger = logging.getLogger("app.main")
 async def lifespan(app: FastAPI):
     logger.info(f"🚀 {settings.PROJECT_NAME} 启动中...")
     try:
-        create_db_and_tables()
+        await create_db_and_tables()
         logger.info("✅ 数据库初始化完成。")
     except Exception as e:
         logger.critical(f"❌ 数据库初始化失败: {e}", exc_info=True)

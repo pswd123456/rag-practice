@@ -1,6 +1,5 @@
 import json
 import logging
-from typing import Any
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
@@ -18,7 +17,8 @@ async def handle_query(
     request: QueryRequest,
     pipeline_factory = Depends(deps.get_rag_pipeline_factory),
 ):  
-    rag_chain = pipeline_factory(
+    # 🟢 修复：pipeline_factory 现在是一个异步函数，必须 await
+    rag_chain = await pipeline_factory(
         knowledge_id=request.knowledge_id,
         strategy=request.strategy,
         top_k=settings.TOP_K,
@@ -48,7 +48,8 @@ async def stream_query(
     request: QueryRequest,
     pipeline_factory = Depends(deps.get_rag_pipeline_factory),
 ):
-    rag_chain = pipeline_factory(
+    # 🟢 修复：pipeline_factory 必须 await
+    rag_chain = await pipeline_factory(
         knowledge_id=request.knowledge_id,
         strategy=request.strategy,
         top_k=settings.TOP_K,

@@ -1,8 +1,8 @@
 from functools import lru_cache
-from typing import Generator, Optional
+from typing import AsyncGenerator, Optional
 
 from fastapi import Depends
-from sqlmodel import Session
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.config import settings
 from app.db.session import get_session
@@ -16,17 +16,25 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def get_db_session() -> Generator[Session, None, None]:
-    yield from get_session()
+async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
+    """
+    异步数据库会话依赖项。
+    FastAPI 将使用此函数注入 AsyncSession。
+    """
+    async for session in get_session():
+        yield session
 
 def get_rag_pipeline_factory(
-    db: Session = Depends(get_session),
+    db: AsyncSession = Depends(get_db_session),
 ):
     """
     工厂函数：返回 create_pipeline 函数
     支持动态传入 llm_model 和可选的 knowledge_id
     """
-    def create_pipeline(
+    
+    # ⚠️ 注意：这里改为 async def，因为内部需要 await db.get()
+    # 这意味着在 Router 中调用 factory(...) 时也需要 await
+    async def create_pipeline(
         knowledge_id: Optional[int] = None, 
         top_k: int = settings.TOP_K,
         strategy: str = "default",
@@ -43,7 +51,8 @@ def get_rag_pipeline_factory(
 
         # 3. 如果指定了 Knowledge ID，则尝试覆盖配置
         if knowledge_id:
-            knowledge = db.get(Knowledge, knowledge_id)
+            # [Async Migration] 改为异步查询
+            knowledge = await db.get(Knowledge, knowledge_id)
             if not knowledge:
                 # 如果传了 ID 但找不到，抛错是合理的
                 raise ValueError(f"Knowledge Base {knowledge_id} not found")

@@ -1,17 +1,15 @@
 import sys
 from pathlib import Path
+from typing import Any
 from dotenv import find_dotenv
-from pydantic import computed_field
+from pydantic import computed_field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # 项目根目录
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
-# 尝试加载 .env 文件 (如果有的话)，没有也不报错，依靠环境变量
 ENV_PATH = find_dotenv()
 if not ENV_PATH:
-    # 在 Docker 生产环境中，可能没有 .env 文件，而是直接通过环境变量注入
-    # 所以这里改为 Warning 或直接 pass，不再 sys.exit(1)
     print(f"警告：未找到 .env 文件，将仅依赖环境变量。当前根目录: {PROJECT_ROOT}", file=sys.stderr)
 else:
     pass
@@ -19,41 +17,33 @@ else:
 class Settings(BaseSettings):
     """
     应用配置类
-    Pydantic 会自动从 .env 文件和环境变量中读取这些值
     """
-    
     PROJECT_NAME: str = "rag-practice"
 
     # --- MinIO 配置 ---
-    MINIO_ENDPOINT: str = "localhost:9000" # Docker Desktop 映射到 localhost
+    MINIO_ENDPOINT: str = "localhost:9000"
     MINIO_ACCESS_KEY: str 
     MINIO_SECRET_KEY: str 
     MINIO_BUCKET_NAME: str = "rag-knowledge-base"
-    MINIO_SECURE: bool = False # 本地开发通常用 HTTP (False)
+    MINIO_SECURE: bool = False
 
     # --- Redis 配置 ---
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
 
-    #queue name
+    # queue name
     DEFAULT_QUEUE_NAME: str = "arq:queue"
     DOCLING_QUEUE_NAME: str = "docling_queue"
     
-    # --- 1. 从 .env 读取的 "基础" 变量 ---
-    # Pydantic 会自动进行类型转换和验证
-    
-    # llm keys
-
+    # --- LLM keys ---
     DEFAULT_LLM_MODEL: str = "qwen-flash"
-
     ZENMUX_API_KEY: str
     ZENMUX_BASE_URL: str = "https://zenmux.ai/api/v1"
-
     DASHSCOPE_BASE_URL: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     DASHSCOPE_API_KEY: str
-
     DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"
     DEEPSEEK_API_KEY: str
+
     # db
     CHROMA_SERVER_HOST: str = "chroma"
     CHROMA_SERVER_PORT: int = 8000
@@ -72,16 +62,24 @@ class Settings(BaseSettings):
     LANGFUSE_SECRET_KEY: str
     LANGFUSE_HOST: str 
     
-    # --- 2. 不依赖其他配置的 "常量" 路径 ---
-    #    这些可以直接使用 PROJECT_ROOT，它们是固定的
     LOG_DIR: Path = PROJECT_ROOT / "logs"
-    # EMBED_MODEL_DIR: Path = PROJECT_ROOT / "embed_models"
 
-    # --- 3. "派生" 的配置 (使用 @computed_field) ---
-    #    这些字段的值依赖于上面从 .env 加载的字段
-    #    使用 @computed_field 可以让它们在实例创建后被计算
-    #    并且像普通属性一样被访问
     
+    @field_validator("DATABASE_URL", mode="before")
+    @classmethod
+    def assemble_async_db_url(cls, v: str | None) -> str:
+        if isinstance(v, str):
+            
+            if v.startswith("postgresql+psycopg2://"):
+                return v.replace("postgresql+psycopg2://", "postgresql+asyncpg://", 1)
+            
+            if v.startswith("postgresql://"):
+                return v.replace("postgresql://", "postgresql+asyncpg://", 1)
+            
+            if v.startswith("postgres://"):
+                return v.replace("postgres://", "postgresql+asyncpg://", 1)
+        return v
+
     @computed_field
     @property
     def LOG_FILE_PATH(self) -> Path:
@@ -92,20 +90,14 @@ class Settings(BaseSettings):
     def REDIS_URL(self) -> str:
         return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}"
     
-
-    # --- 4. 配置Pydantic-Settings ---
     model_config = SettingsConfigDict(
-        env_file=ENV_PATH,        # 明确告诉 Pydantic 加载哪个 .env 文件
-        env_file_encoding='utf-8', # 编码
-        extra='ignore'            # 忽略 .env 中多余的变量
+        env_file=ENV_PATH,
+        env_file_encoding='utf-8',
+        extra='ignore'
     )
 
-# --- 5. 创建一个全局单例 ---
-# 在应用启动时，Pydantic 会执行一次读取和验证
-# 如果 .env 里的 TOP_K 写成了 "abc"，程序会在这里立即报错
 try:
     settings = Settings()#type: ignore
 except Exception as e:
     print(f"错误：加载配置失败。\n{e}", file=sys.stderr)
     sys.exit(1)
-

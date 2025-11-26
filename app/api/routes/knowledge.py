@@ -2,14 +2,14 @@ import logging
 from typing import Sequence
 from pathlib import Path
 
-from fastapi import APIRouter, Body, Depends, HTTPException, UploadFile, File
-from sqlmodel import Session, select, desc
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from sqlmodel import select, desc
+from sqlmodel.ext.asyncio.session import AsyncSession  # 🟢 引入 AsyncSession
 
 from arq import create_pool
 from arq.connections import RedisSettings
 
 from app.api import deps
-from app.services.retrieval import VectorStoreManager
 from app.core.config import settings
 from app.domain.models import (Knowledge,
                                KnowledgeCreate,
@@ -28,56 +28,62 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # ------------------ Knowledge base management ------------------
+
 @router.post("/knowledges", response_model=KnowledgeRead)
-def handle_create_knowledge(
-    *, #强制关键字参数
+async def handle_create_knowledge(
+    *, # 强制关键字参数
     knowledge_in: KnowledgeCreate,
-    db: Session = Depends(deps.get_db_session),
+    db: AsyncSession = Depends(deps.get_db_session), # 🟢 类型提示变更
 ):
-    return knowledge_crud.create_knowledge(db, knowledge_in)
+    # 🟢 增加 await
+    return await knowledge_crud.create_knowledge(db, knowledge_in)
 
 @router.get("/knowledges", response_model=Sequence[KnowledgeRead])
-def handle_get_all_knowledges(
-    db: Session = Depends(deps.get_db_session),
+async def handle_get_all_knowledges(
+    db: AsyncSession = Depends(deps.get_db_session),
     skip: int = 0,
     limit: int = 100,
 ):
-    return knowledge_crud.get_all_knowledges(db=db, skip=skip, limit=limit)
+    # 🟢 增加 await
+    return await knowledge_crud.get_all_knowledges(db=db, skip=skip, limit=limit)
 
 @router.get("/knowledges/{knowledge_id}", response_model=KnowledgeRead)
-def handle_get_knowledge_by_id(
+async def handle_get_knowledge_by_id(
     knowledge_id: int,
-    db: Session = Depends(deps.get_db_session),
+    db: AsyncSession = Depends(deps.get_db_session),
 ):
-    return knowledge_crud.get_knowledge_by_id(db=db, knowledge_id=knowledge_id)
+    # 🟢 增加 await
+    return await knowledge_crud.get_knowledge_by_id(db=db, knowledge_id=knowledge_id)
 
 @router.put("/knowledges/{knowledge_id}", response_model=KnowledgeRead)
-def handle_update_knowledge(
+async def handle_update_knowledge(
     knowledge_id: int,
     knowledge_in: KnowledgeUpdate,
-    db: Session = Depends(deps.get_db_session),
+    db: AsyncSession = Depends(deps.get_db_session),
 ):
-    return knowledge_crud.update_knowledge(db=db, knowledge_id=knowledge_id, knowledge_to_update=knowledge_in)
+    # 🟢 增加 await
+    return await knowledge_crud.update_knowledge(db=db, knowledge_id=knowledge_id, knowledge_to_update=knowledge_in)
 
 @router.delete("/knowledges/{knowledge_id}")
 async def handle_delete_knowledge(
     knowledge_id: int,
-    db: Session = Depends(deps.get_db_session),
+    db: AsyncSession = Depends(deps.get_db_session),
 ):
     """
     异步删除知识库，并级联删除其下所有文档和向量。
     """
-    # 1. 查出知识库
-    knowledge = db.get(Knowledge, knowledge_id)
+    # 1. 查出知识库 (🟢 await)
+    knowledge = await db.get(Knowledge, knowledge_id)
     if not knowledge:
         raise HTTPException(status_code=404, detail="知识库不存在")
     
     # 立即标记为 DELETING
     knowledge.status = KnowledgeStatus.DELETING
-    db.add(knowledge)
-    db.commit() # 立即提交，让前端能立刻查到状态变化
+    db.add(knowledge) # 内存操作，不需要 await
+    await db.commit() # 🟢 await
+    # 状态更新不需要 refresh，因为直接返回 message
 
-    # 2. 推送任务到 Redis
+    # 2. 推送任务到 Redis (Arq 已经是异步的，保持现状)
     try:
         redis = await create_pool(RedisSettings(host=settings.REDIS_HOST, port=settings.REDIS_PORT))
         await redis.enqueue_job("delete_knowledge_task", knowledge_id)
@@ -87,25 +93,27 @@ async def handle_delete_knowledge(
 
     # 3. 立即返回，不等待删除完成
     return {"message": f"知识库 {knowledge.name} 删除任务已提交后台处理。"}
+
 # 获取指定知识库下的所有文档
 @router.get("/knowledges/{knowledge_id}/documents", response_model=Sequence[Document])
-def handle_get_knowledge_documents(
+async def handle_get_knowledge_documents(
     knowledge_id: int,
-    db: Session = Depends(deps.get_db_session),
+    db: AsyncSession = Depends(deps.get_db_session),
 ):
-    # 检查知识库是否存在
-    knowledge = db.get(Knowledge, knowledge_id)
+    # 检查知识库是否存在 (🟢 await)
+    knowledge = await db.get(Knowledge, knowledge_id)
     if not knowledge:
         raise HTTPException(status_code=404, detail="知识库不存在")
     
     # 查询文档
-    # statement = select(Document).where(Document.knowledge_base_id == knowledge_id).order_by(Document.created_at.desc())
     statement = (
         select(Document)
         .where(Document.knowledge_base_id == knowledge_id)
-        .order_by(desc(Document.created_at)) # 👈 使用 desc() 函数包裹
+        .order_by(desc(Document.created_at))
     )
-    return db.exec(statement).all()
+    # 🟢 异步执行查询: (await db.exec(...)).all()
+    result = await db.exec(statement)
+    return result.all()
 
 # ------------------- Document management ------------------
 
@@ -113,15 +121,16 @@ def handle_get_knowledge_documents(
 async def upload_file(
         knowledge_id: int,
         file: UploadFile = File(...),
-        db: Session = Depends(deps.get_db_session),
+        db: AsyncSession = Depends(deps.get_db_session),
     ):
 
-    # 检查知识库是否存在
-    knowledge = db.get(Knowledge, knowledge_id)
+    # 检查知识库是否存在 (🟢 await)
+    knowledge = await db.get(Knowledge, knowledge_id)
     if not knowledge:
         raise HTTPException(status_code=404, detail="知识库不存在")
     
-    # 保存文件
+    # 保存文件 (MinIO 操作是同步的，如果是 CPU 密集型或网络阻塞严重，理想情况应放入 threadpool，但 save_upload_file 暂且视为快速)
+    # 注意：UploadFile 的 .read() 是 async 的，但 save_upload_file 内部处理了 file object
     try:
         saved_path = save_upload_file(file, knowledge_id)
     except Exception as e:
@@ -139,9 +148,10 @@ async def upload_file(
     )
 
     db.add(doc)
-    db.commit()
-    db.refresh(doc)
-    #推送任务到redis
+    await db.commit() # 🟢 await
+    await db.refresh(doc) # 🟢 await
+    
+    # 推送任务到 redis
     try:
         redis = await create_pool(RedisSettings(host=settings.REDIS_HOST, port=settings.REDIS_PORT))
         
@@ -169,36 +179,35 @@ async def upload_file(
         doc.status = DocStatus.FAILED
         doc.error_message = f"推送任务到 Redis 失败: {str(e)}"
         db.add(doc)
-        db.commit()
+        await db.commit() # 🟢 await
         raise HTTPException(status_code=500, detail=f"推送任务到 Redis 失败: {str(e)}")
     
     return doc.id
     
 @router.delete("/documents/{doc_id}")
-def handle_delete_document(
+async def handle_delete_document(
     doc_id: int,
-    db: Session = Depends(deps.get_db_session),
+    db: AsyncSession = Depends(deps.get_db_session),
 ):
     """
     删除指定文档及其在向量库中的所有切片。
     """
     try:
-        # 调用复杂的服务逻辑，它负责原子删除
-        return delete_document_and_vectors(db=db, doc_id=doc_id)
+        # 调用复杂的服务逻辑，它负责原子删除 (🟢 await)
+        return await delete_document_and_vectors(db=db, doc_id=doc_id)
     except HTTPException as e:
-        # 捕捉 404 错误
         raise e
     except Exception as e:
-        # 捕捉其他错误 (如 Chroma 连接失败)
         raise HTTPException(status_code=500, detail=f"删除失败: {str(e)}")
 
-#查询单个文档详情 (用于前端轮询状态)
+# 查询单个文档详情 (用于前端轮询状态)
 @router.get("/documents/{doc_id}", response_model=Document)
-def handle_get_document(
+async def handle_get_document(
     doc_id: int,
-    db: Session = Depends(deps.get_db_session),
+    db: AsyncSession = Depends(deps.get_db_session),
 ):
-    doc = db.get(Document, doc_id)
+    # 🟢 await
+    doc = await db.get(Document, doc_id)
     if not doc:
         raise HTTPException(status_code=404, detail="文档不存在")
     return doc
