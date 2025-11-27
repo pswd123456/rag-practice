@@ -1,8 +1,10 @@
+# tests/test_knowledge_crud.py
 import pytest
 from unittest.mock import MagicMock, patch
 from sqlmodel import select
 
-from app.domain.models import Knowledge, Document, KnowledgeCreate, KnowledgeStatus, Chunk
+# 🟢 [FIX] 移除 Chunk
+from app.domain.models import Knowledge, Document, KnowledgeCreate, KnowledgeStatus
 from app.services import knowledge_crud
 
 @pytest.mark.asyncio
@@ -32,20 +34,18 @@ async def test_delete_knowledge_cascading(db_session, mock_minio):
     await db_session.commit()
     
     # 2. Mock VectorStoreManager (针对 ES)
-    # 我们不测试真实的 ES 删除，只测试是否调用了 delete_vectors
     with patch("app.services.document_crud.VectorStoreManager") as MockVSM:
         mock_vsm_instance = MockVSM.return_value
-        mock_vsm_instance.delete_vectors.return_value = True
+        # 模拟 delete_by_doc_id 成功
+        mock_vsm_instance.delete_by_doc_id.return_value = True
 
         # 执行删除
         await knowledge_crud.delete_knowledge_pipeline(db_session, kb.id)
         
-        # 验证 delete_vectors 被调用 (因为 doc1 存在，会尝试删除其向量)
-        # 注意：代码逻辑是先查 Document 再调用 delete_document_and_vectors
-        # 如果 Document 没有 Chunk，delete_document_and_vectors 内部可能不调 delete_vectors
-        # 我们需要给 doc1 加一个 Chunk 才能触发 vector 删除逻辑
-        # 但在这个单元测试中，我们主要验证流程不报错
-        pass 
+        # 验证 ES 删除被调用
+        # 因为 doc1 存在，document_crud.delete_document_and_vectors 会被调用
+        # 进而调用 delete_by_doc_id
+        assert mock_vsm_instance.delete_by_doc_id.called
 
     # 3. 验证 DB 清除
     result_kb = await db_session.get(Knowledge, kb.id)
@@ -55,5 +55,4 @@ async def test_delete_knowledge_cascading(db_session, mock_minio):
     assert len(result_doc.all()) == 0
 
     # 4. 验证 MinIO 删除
-    # delete_document_and_vectors 会调用 delete_file_from_minio
     assert mock_minio.remove_object.called

@@ -130,13 +130,6 @@ def es_client():
     yield client
     client.close()
 
-@pytest.fixture
-def clean_es_index(es_client):
-    """清理测试索引"""
-    prefix = f"{settings.ES_INDEX_PREFIX}_*"
-    es_client.indices.delete(index=prefix, ignore=[400, 404])
-    yield
-    es_client.indices.delete(index=prefix, ignore=[400, 404])
 
 # Helper
 class AsyncMock(MagicMock):
@@ -156,3 +149,19 @@ def mock_es_client():
         client.ping.return_value = True
         client.indices.exists.return_value = False
         yield client
+
+@pytest.fixture(autouse=True)
+def override_settings():
+    """强制修改测试环境的 ES 前缀"""
+    original_prefix = settings.ES_INDEX_PREFIX
+    settings.ES_INDEX_PREFIX = "test_rag" # 👈 强制使用测试专用前缀
+    yield
+    settings.ES_INDEX_PREFIX = original_prefix
+
+@pytest.fixture
+def clean_es_index(es_client):
+    """清理测试索引"""
+    prefix = f"{settings.ES_INDEX_PREFIX}_*"
+    es_client.indices.delete(index=prefix, ignore=[400, 404])
+    yield
+    es_client.indices.delete(index=prefix, ignore=[400, 404])
