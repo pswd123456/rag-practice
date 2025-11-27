@@ -79,13 +79,23 @@ async def delete_knowledge_pipeline(db: AsyncSession, knowledge_id: int):
             logger.error(f"删除文档 {doc.id} 失败: {e}", exc_info=True)
 
     # 检查残留
-    stmt_check = select(Document).where(Document.knowledge_base_id == knowledge_id)
-    result_check = await db.exec(stmt_check)
-    remaining_docs = result_check.all()
-    
-    if remaining_docs:
-        logger.error(f"级联删除异常：知识库 {knowledge_id} 仍有 {len(remaining_docs)} 个文档未被清除。")
-        return
+    max_retries = 3
+    for _ in range(max_retries):
+        # 检查是否有残留文档 (包括竞态条件下滑入的新文档)
+        stmt_check = select(Document).where(Document.knowledge_base_id == knowledge_id)
+        result_check = await db.exec(stmt_check)
+        remaining_docs = result_check.all()
+        
+        if not remaining_docs:
+            break # 已清理干净，跳出循环
+        
+        logger.warning(f"知识库 {knowledge.name} 发现 {len(remaining_docs)} 个残留文档，正在执行补充删除...")
+        
+        for doc in remaining_docs:
+            try:
+                await delete_document_and_vectors(db, doc.id)
+            except Exception as e:
+                logger.error(f"补充删除文档 {doc.id} 失败: {e}")
 
     try:
         # 显式查询实验记录

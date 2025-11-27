@@ -65,7 +65,7 @@ async def delete_document_and_vectors(db: AsyncSession, doc_id: int):
     # 4. 最后清理 MinIO 文件
     if doc.file_path:
         try:
-            delete_file_from_minio(doc.file_path)
+            await asyncio.to_thread(delete_file_from_minio, doc.file_path)
         except Exception as e:
             logger.warning(f"MinIO 文件删除失败 (可忽略): {e}")
     

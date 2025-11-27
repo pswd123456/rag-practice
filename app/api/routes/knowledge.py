@@ -3,6 +3,7 @@ from typing import Sequence
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi.concurrency import run_in_threadpool
 from sqlmodel import select, desc
 from sqlmodel.ext.asyncio.session import AsyncSession  # 🟢 引入 AsyncSession
 
@@ -124,15 +125,20 @@ async def upload_file(
         db: AsyncSession = Depends(deps.get_db_session),
     ):
 
-    # 检查知识库是否存在 (🟢 await)
+    # 检查知识库是否存在
     knowledge = await db.get(Knowledge, knowledge_id)
     if not knowledge:
         raise HTTPException(status_code=404, detail="知识库不存在")
     
-    # 保存文件 (MinIO 操作是同步的，如果是 CPU 密集型或网络阻塞严重，理想情况应放入 threadpool，但 save_upload_file 暂且视为快速)
-    # 注意：UploadFile 的 .read() 是 async 的，但 save_upload_file 内部处理了 file object
+    # 使用 HTTP 409 Conflict 状态码表示状态冲突
+    if knowledge.status == KnowledgeStatus.DELETING:
+        raise HTTPException(
+            status_code=409, 
+            detail=f"知识库 '{knowledge.name}' 正在删除中，无法上传新文件。"
+        )
+    
     try:
-        saved_path = save_upload_file(file, knowledge_id)
+        saved_path = await run_in_threadpool(save_upload_file, file, knowledge_id)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"保存文件失败: {str(e)}")
     
