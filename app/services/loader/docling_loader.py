@@ -1,6 +1,8 @@
 import logging
 import torch
-from typing import List, Optional
+import json
+import os
+from typing import List
 from pathlib import Path
 
 # LangChain Document
@@ -11,6 +13,9 @@ from docling.document_converter import DocumentConverter, PdfFormatOption
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import PdfPipelineOptions
 from docling.datamodel.accelerator_options import AcceleratorOptions, AcceleratorDevice
+
+# Config
+from app.core.config import settings, PROJECT_ROOT  # 确保引用了 PROJECT_ROOT
 
 logger = logging.getLogger(__name__)
 
@@ -54,11 +59,45 @@ class DoclingLoader:
             }
         )
 
+    def _save_debug_files(self, doc_content, markdown_text: str):
+        """
+        [Debug Logic] 保存中间解析结果到项目根目录
+        """
+        try:
+            # 1. 构造文件名
+            original_stem = Path(self.file_path).stem
+            # 清理文件名中的特殊字符以免路径报错
+            safe_stem = "".join([c for c in original_stem if c.isalnum() or c in (' ', '-', '_')]).strip()
+            
+            json_filename = f"debug_docling_{safe_stem}.json"
+            md_filename = f"debug_docling_{safe_stem}.md"
+            
+            json_path = PROJECT_ROOT / json_filename
+            md_path = PROJECT_ROOT / md_filename
+
+            logger.info(f"🐛 [Debug] 正在保存 Docling 中间文件到根目录...")
+
+            # 2. 保存层级结构 JSON (Hierarchical Structure)
+            # DoclingDocument 对象通常提供 export_to_dict() 方法
+            if hasattr(doc_content, "export_to_dict"):
+                doc_dict = doc_content.export_to_dict()
+                with open(json_path, "w", encoding="utf-8") as f:
+                    json.dump(doc_dict, f, ensure_ascii=False, indent=2)
+                logger.info(f"   -> JSON Structure: {json_path}")
+            else:
+                logger.warning("   -> 该 Docling 版本不支持 export_to_dict，跳过 JSON 保存。")
+
+            # 3. 保存 Markdown 内容
+            with open(md_path, "w", encoding="utf-8") as f:
+                f.write(markdown_text)
+            logger.info(f"   -> Markdown Content: {md_path}")
+
+        except Exception as e:
+            logger.error(f"🐛 [Debug] 保存调试文件失败: {e}", exc_info=True)
+
     def load(self) -> List[Document]:
         """
         加载文档并转换为 LangChain Document 对象列表。
-        目前 Docling 通常将整个文档转换为一个完整的 Markdown，
-        这里我们将其封装为一个 Document，后续由 Splitter 进行切分。
         """
         if not Path(self.file_path).exists():
             raise FileNotFoundError(f"文件不存在: {self.file_path}")
@@ -72,14 +111,18 @@ class DoclingLoader:
             
             # 导出为 Markdown
             markdown_text = doc_content.export_to_markdown()
+
+            # ==========================================
+            # 🛠️ 插入 Debug 逻辑
+            # ==========================================
+            self._save_debug_files(doc_content, markdown_text)
+            # ==========================================
             
             # 提取元数据
-            # Docling 的元数据可能比较分散，我们取一些基础的
             metadata = {
                 "source": str(self.file_path),
                 "filename": Path(self.file_path).name,
                 "page_count": len(doc_content.pages) if hasattr(doc_content, "pages") else 0,
-                # 可以在这里添加更多 Docling 特有的元数据，如表格数量等
             }
 
             logger.info(f"Docling 解析完成，生成 Markdown 长度: {len(markdown_text)}")

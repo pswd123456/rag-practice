@@ -90,3 +90,5 @@ embed_models/
 
 logs/
 *.log
+
+debug_*
