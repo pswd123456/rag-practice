@@ -5,7 +5,7 @@ from enum import Enum
 
 if TYPE_CHECKING:
     from .knowledge import Knowledge
-    from .chunk import Chunk
+
 
 class DocStatus(str, Enum):
     PENDING = "PENDING"
@@ -36,5 +36,5 @@ class Document(SQLModel, table=True):
 
     # 关系定义
     knowledge_base: "Knowledge" = Relationship(back_populates="documents")
-    chunks: List["Chunk"] = Relationship(back_populates="document")
+    # chunks: List["Chunk"] = Relationship(back_populates="document")
 
