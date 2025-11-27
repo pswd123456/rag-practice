@@ -163,12 +163,16 @@ def render_evaluation_tab(selected_kb):
                         c2.warning(f"⏳ {status}")
                         
                     if status == "COMPLETED":
+                        # 🟢 [修改] 使用无序列表 (-) 并显式换行，确保垂直排列
+                        # 注意：f-string 内部换行即保留格式
                         metrics_display = f"""
-                        **Faithfulness**: {exp.get('faithfulness', 0):.3f}  
-                        **Relevancy**: {exp.get('answer_relevancy', 0):.3f}  
-                        **Recall**: {exp.get('context_recall', 0):.3f}  
-                        **Precision**: {exp.get('context_precision', 0):.3f}
+- **Faithfulness**: {exp.get('faithfulness', 0):.3f}
+- **Context Recall**: {exp.get('context_recall', 0):.3f}
+- **Context Precision**: {exp.get('context_precision', 0):.3f}
+- **Answer Accuracy**: {exp.get('answer_accuracy', 0):.3f}
+- **Entity Recall**: {exp.get('context_entities_recall', 0):.3f}
                         """
+# - **Relevancy**: {exp.get('answer_relevancy', 0):.3f}
                         c3.markdown(metrics_display)
                     else:
                         c3.caption("-")

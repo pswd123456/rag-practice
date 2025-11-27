@@ -272,8 +272,22 @@ async def run_experiment_pipeline(db: AsyncSession, experiment_id: int):
                 # C. 上报分数
                 for metric_name, val in safe_scores.items():
                     trace.score(name=metric_name, value=val)
-                    if metric_name in agg_scores:
-                        agg_scores[metric_name].append(val)
+                    
+                    # 🟢 [关键修复] 名称映射：将 Ragas 的名称映射到 DB/agg_scores 的名称
+                    target_key = metric_name
+                    
+                    if metric_name == "context_entity_recall":
+                        target_key = "context_entities_recall"
+                
+                    if metric_name == "nv_accuracy": 
+                        target_key = "answer_accuracy"
+
+                    # 3. 只有在 agg_scores 定义了的指标才统计
+                    if target_key in agg_scores:
+                        agg_scores[target_key].append(val)
+                    else:
+                        # 方便调试，打印一下不在列表里的指标名
+                        logger.debug(f"Metric {metric_name} (mapped to {target_key}) not in agg_scores, skipping.")
 
         # 5. 计算平均分
         def avg(lst):
