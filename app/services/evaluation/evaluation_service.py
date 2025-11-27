@@ -52,14 +52,6 @@ async def generate_testset_pipeline(db: AsyncSession, testset_id: int, source_do
         await db.commit()
         
         # 2. 加载源文档 (涉及 MinIO 和 文件加载，放入 Thread)
-        async def _load_docs_task():
-            langchain_docs = []
-            minio_client = get_minio_client()
-            
-            # 这里需要在线程内创建临时 Session 查 Document 吗？
-            # 不，最好在外部查好 path 传进去，或者在 Thread 外部查好
-            return langchain_docs
-        
         # 优化：先在异步上下文中查出所有 Document 的 path
         doc_paths = []
         for doc_id in source_doc_ids:
@@ -77,7 +69,12 @@ async def generate_testset_pipeline(db: AsyncSession, testset_id: int, source_do
             for filename, file_path in doc_paths:
                 suffix = Path(filename).suffix
                 with tempfile.NamedTemporaryFile(delete=True, suffix=suffix) as tmp:
-                    minio_client.fget_object(settings.MINIO_BUCKET_NAME, file_path, tmp.name)
+                    
+                    minio_client.fget_object(
+                        bucket_name=settings.MINIO_BUCKET_NAME, 
+                        object_name=file_path, 
+                        file_path=tmp.name
+                    )
                     # 复用 loader
                     loaded = load_single_document(tmp.name)
                     loaded_docs.extend(loaded)
@@ -114,6 +111,7 @@ async def generate_testset_pipeline(db: AsyncSession, testset_id: int, source_do
             json_bytes = json_str.encode('utf-8')
             
             file_path = f"testsets/{testset_id}_{testset.name}.jsonl"
+            # save_bytes_to_minio 内部已经封装了 kwargs 调用
             save_bytes_to_minio(json_bytes, file_path, "application/json")
             
             # 同步到 Langfuse (可选，网络IO)
@@ -230,7 +228,13 @@ async def run_experiment_pipeline(db: AsyncSession, experiment_id: int):
         
         lf_dataset = await asyncio.to_thread(_get_dataset)
 
-        agg_scores = {"faithfulness": [], "answer_relevancy": [], "context_recall": [], "context_precision": []}
+        agg_scores = {"faithfulness": [], 
+                      "answer_relevancy": [], 
+                      "context_recall": [], 
+                      "context_precision": [], 
+                      "answer_accuracy": [], 
+                      "context_entities_recall": []
+                      }
 
         # 4. 遍历并运行实验
         # 注意：这里我们已经是 async 函数了，可以直接 await pipeline.async_query
@@ -283,6 +287,8 @@ async def run_experiment_pipeline(db: AsyncSession, experiment_id: int):
             exp.answer_relevancy = avg(agg_scores["answer_relevancy"])
             exp.context_recall = avg(agg_scores["context_recall"])
             exp.context_precision = avg(agg_scores["context_precision"])
+            exp.answer_accuracy = avg(agg_scores["answer_accuracy"])
+            exp.context_entities_recall = avg(agg_scores["context_entities_recall"])
             
             exp.status = "COMPLETED"
             db.add(exp)

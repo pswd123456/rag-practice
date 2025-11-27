@@ -20,8 +20,11 @@ class Experiment(SQLModel, table=True):
     # === 🛑 核心补全：确保这几个分数字段都在！ ===
     faithfulness: float = Field(default=0.0)
     answer_relevancy: float = Field(default=0.0)
+    answer_accuracy: float = Field(default=0.0)
     context_recall: float = Field(default=0.0)
     context_precision: float = Field(default=0.0)
+    context_entities_recall: float = Field(default=0.0)
+    
     # ===========================================
     
     # 任务状态

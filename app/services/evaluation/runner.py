@@ -11,7 +11,9 @@ from langfuse.langchain import CallbackHandler
 from ragas.embeddings import LangchainEmbeddingsWrapper
 from ragas.llms import LangchainLLMWrapper
 from ragas.metrics import (
+    AnswerAccuracy,
     AnswerRelevancy,
+    ContextEntityRecall,
     ContextPrecision,
     ContextRecall,
     Faithfulness,
@@ -89,6 +91,8 @@ class RAGEvaluator:
             "answer_relevancy": lambda: AnswerRelevancy(llm=ragas_llm, embeddings=ragas_embed),
             "context_recall": lambda: ContextRecall(llm=ragas_llm),
             "context_precision": lambda: ContextPrecision(llm=ragas_llm),
+            "context_entities_recall": lambda: ContextEntityRecall(llm=ragas_llm),
+            "answer_accuracy": lambda: AnswerAccuracy(llm=ragas_llm)
         }
 
         metrics = []

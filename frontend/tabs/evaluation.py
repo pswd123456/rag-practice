@@ -98,19 +98,25 @@ def render_evaluation_tab(selected_kb):
                                             
                                             metrics = {
                                                 "Faithfulness": exp_data.get("faithfulness", 0),
-                                                "Relevancy": exp_data.get("answer_relevancy", 0),
-                                                "Recall": exp_data.get("context_recall", 0),
-                                                "Precision": exp_data.get("context_precision", 0)
+                                                # "Answer Relevancy": exp_data.get("answer_relevancy", 0),
+                                                "Context Recall": exp_data.get("context_recall", 0),
+                                                "Context Precision": exp_data.get("context_precision", 0),
+                                                "Answer Accuracy": exp_data.get("answer_accuracy", 0),
+                                                "Context Entities Recall": exp_data.get("context_entities_recall", 0)
+
                                             }
                                             
                                             fig = utils.plot_radar_chart(metrics)
                                             st.pyplot(fig, use_container_width=False)
                                             
-                                            c_m1, c_m2, c_m3, c_m4 = st.columns(4)
+                                            c_m1, c_m2, c_m3, c_m4, c_m5, c_m6 = st.columns(6)
                                             c_m1.metric("Faithfulness", f"{metrics['Faithfulness']:.3f}")
-                                            c_m2.metric("Relevancy", f"{metrics['Relevancy']:.3f}")
-                                            c_m3.metric("Recall", f"{metrics['Recall']:.3f}")
-                                            c_m4.metric("Precision", f"{metrics['Precision']:.3f}")
+                                            # c_m2.metric("Answer Relevancy", f"{metrics['Answer Relevancy']:.3f}")
+                                            c_m3.metric("Context Recall", f"{metrics['Context Recall']:.3f}")
+                                            c_m4.metric("Context Precision", f"{metrics['Context Precision']:.3f}")
+                                            c_m5.metric("Answer Accuracy", f"{metrics['Answer Accuracy']:.3f}")
+                                            c_m6.metric("Context Entities Recall", f"{metrics['Context Entities Recall']:.3f}")
+                                            
                                             break
                                         
                                         elif exp_status == "FAILED":

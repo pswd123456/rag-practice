@@ -28,14 +28,19 @@ langchain-text-splitters
 tiktoken
 dashscope
 
+
 # --- Document Processing (The New Guy) ---
 # Docling 对依赖很挑剔，不锁版本让 uv 自动适配是最好的
 docling
 pypdf
 python-docx
+docx2txt
+rapidfuzz
+
 # 基础 OCR 库
 pypdfium2
 tesserocr
+
 
 # --- Evaluation ---
 ragas

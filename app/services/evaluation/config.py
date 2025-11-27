@@ -17,6 +17,8 @@ class EvaluationConfig:
         # "answer_relevancy",
         "context_recall",
         "context_precision",
+        "answer_accuracy",
+        "context_entities_recall"
     )
 
 

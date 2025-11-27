@@ -1,7 +1,7 @@
 import logging
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_community.document_loaders import PyPDFLoader, DirectoryLoader, TextLoader
+from langchain_community.document_loaders import PyPDFLoader, DirectoryLoader, TextLoader, Docx2txtLoader
 
 from pathlib import Path
 from typing import Iterable, List, Optional
@@ -49,6 +49,10 @@ def load_single_document(file_path: str) -> List[Document]:
     # md 将视为普通文本处理
     elif path_obj.suffix.lower() in [".txt", ".md"]:
         loader = TextLoader(str(path_obj), encoding="utf-8")
+
+    elif path_obj.suffix == ".docx":
+        loader = Docx2txtLoader(str(path_obj))
+        
     else:
         raise ValueError(f"不支持的文件类型: {path_obj.suffix}")
     
