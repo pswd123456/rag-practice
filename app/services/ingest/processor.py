@@ -8,7 +8,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
-from app.domain.models import Document, DocStatus, Chunk, Knowledge
+from app.domain.models import Document, DocStatus, Knowledge
 # DoclingLoader
 from app.services.loader.docling_loader import load_docling_document
 from app.services.loader import load_single_document, split_docs
@@ -113,25 +113,10 @@ async def process_document_pipeline(db: AsyncSession, doc_id: int):
         # 获取 ES 返回的 ID 列表
         es_ids = await asyncio.to_thread(_vector_store_task)
 
-        # 6. 保存 Chunk 映射 (DB Async)
-        chunks_to_save = []
-        for i, (es_id, s_docs) in enumerate(zip(es_ids, splitted_docs)):
-            chunk = Chunk(
-                document_id=doc.id, # type: ignore
-                chroma_id=es_id,    # [Note] 这里复用 chroma_id 字段存储 ES 的 _id
-                chunk_index=i,
-                content=s_docs.page_content,
-                page_number=s_docs.metadata.get("page_number")
-            )
-            chunks_to_save.append(chunk)
-        
-        db.add_all(chunks_to_save)
-
-        # 7. 完成
+        # 6. 完成
         doc.status = DocStatus.COMPLETED
         db.add(doc)
         await db.commit()
-        logger.info(f"文档 {doc.id} 处理完成，共生成 {len(chunks_to_save)} 个切片。")
 
     except Exception as e:
         logger.error(f"文档 {doc_id} 处理失败: {e}", exc_info=True)
