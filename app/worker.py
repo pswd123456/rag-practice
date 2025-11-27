@@ -12,7 +12,7 @@ from app.core.logging_setup import setup_logging
 from app.services.ingest.processor import process_document_pipeline
 from app.services.knowledge_crud import delete_knowledge_pipeline 
 from app.services.evaluation.evaluation_service import generate_testset_pipeline, run_experiment_pipeline
-
+from app.db.session import engine
 # --- 1. 初始化 Worker 日志 ---
 setup_logging(str(settings.LOG_FILE_PATH), log_level="INFO")
 logger = logging.getLogger("app.worker")
@@ -22,6 +22,7 @@ async def startup(ctx: Any):
 
 async def shutdown(ctx: Any):
     logger.info("👷 Worker 进程关闭...")
+    await engine.dispose()
 
 # --- Worker 任务定义 (纯异步，无 Wrapper) ---
 

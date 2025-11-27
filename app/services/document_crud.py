@@ -1,3 +1,4 @@
+import asyncio
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -41,9 +42,7 @@ async def delete_document_and_vectors(db: AsyncSession, doc_id: int):
                 embed_model = setup_embed_model(knowledge.embed_model)
                 manager = VectorStoreManager(collection_name, embed_model)
                 
-                # TODO: VectorStoreManager.delete_vectors 目前是同步调用 (requests)
-                # 在高并发场景下建议放入 run_in_executor，但此处保持简单
-                manager.delete_vectors(chroma_ids)
+                await asyncio.to_thread(manager.delete_vectors, chroma_ids)
                 
             except Exception as e:
                 logger.error(f"ChromaDB 向量删除失败，回滚操作: {e}")
