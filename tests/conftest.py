@@ -3,6 +3,9 @@ import pytest_asyncio
 import asyncio
 from typing import AsyncGenerator
 from unittest.mock import MagicMock, patch
+from httpx import AsyncClient, ASGITransport
+from app.api import deps
+from app.main import app
 
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from sqlmodel import SQLModel
@@ -24,15 +27,22 @@ TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
 @pytest_asyncio.fixture(name="db_session")
 async def db_session_fixture() -> AsyncGenerator[AsyncSession, None]:
+    """
+    创建一个连接到内存 SQLite 的临时数据库会话。
+    关键点：它会覆盖 app.dependency_overrides，强制 API 使用这个测试 DB。
+    """
+    # 1. 在当前 Event Loop 中创建 Engine
     engine = create_async_engine(
         TEST_DATABASE_URL, 
         connect_args={"check_same_thread": False}, 
         poolclass=StaticPool,
     )
     
+    # 2. 初始化表结构
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
 
+    # 3. 创建 Session 工厂
     session_maker = async_sessionmaker(
         bind=engine,
         class_=AsyncSession,
@@ -40,9 +50,21 @@ async def db_session_fixture() -> AsyncGenerator[AsyncSession, None]:
         autoflush=False
     )
 
+    # 4. 定义依赖覆盖函数
+    async def override_get_db_session():
+        async with session_maker() as session:
+            yield session
+
+    # 5. 【关键】应用依赖覆盖
+    app.dependency_overrides[deps.get_db_session] = override_get_db_session
+
+    # 6. Yield Session 给测试函数直接使用 (如果需要)
     async with session_maker() as session:
         yield session
 
+    # 7. 清理：移除依赖覆盖，删除表，关闭引擎
+    app.dependency_overrides.clear()
+    
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.drop_all)
     
@@ -108,3 +130,16 @@ def mock_llm_factory():
 class AsyncMock(MagicMock):
     async def __call__(self, *args, **kwargs):
         return super(AsyncMock, self).__call__(*args, **kwargs)
+    
+
+@pytest_asyncio.fixture
+async def async_client(db_session) -> AsyncGenerator[AsyncClient, None]: 
+    """
+    创建一个异步 HTTP 客户端。
+    依赖 db_session 确保在 Client 发起请求前，App 的 DB 依赖已经被 Override。
+    """
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test"
+    ) as client:
+        yield client
