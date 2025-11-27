@@ -13,6 +13,7 @@ redis
 minio
 chromadb
 asyncpg
+aiosqlite
 
 # --- Async Tasks ---
 arq
