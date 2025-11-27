@@ -110,16 +110,22 @@ class VectorStoreManager:
                 logger.error(f"删除索引失败: {e}")
                 return False
         return True
-
-    def delete_vectors(self, ids: List[str]) -> bool:
+     
+    def delete_by_doc_id(self, doc_id: int) -> bool:
         """
-        根据 ID 列表删除文档
+        利用 delete_by_query 根据 metadata.doc_id 删除向量
         """
-        if not ids:
-            return True
+        query = {
+            "query": {
+                "term": {
+                    "metadata.doc_id": doc_id
+                }
+            }
+        }
         try:
-            self.get_vector_store().delete(ids)
+            resp = self.client.delete_by_query(index=self.index_name, body=query)
+            logger.info(f"已从 ES {self.index_name} 删除文档 {doc_id} 的切片。Deleted: {resp.get('deleted')}")
             return True
         except Exception as e:
-            logger.error(f"批量删除向量失败: {e}")
+            logger.error(f"删除文档向量失败: {e}")
             raise e
