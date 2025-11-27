@@ -1,3 +1,4 @@
+import asyncio
 from functools import lru_cache
 from typing import AsyncGenerator, Optional
 
@@ -70,10 +71,9 @@ def get_rag_pipeline_factory(
         manager = VectorStoreManager(
             collection_name=collection_name,
             embed_model=embed_model,
-            default_top_k=top_k
         )
         # 确保连接就绪
-        manager.ensure_collection()
+        await asyncio.to_thread(manager.ensure_index)
 
         return RAGPipeline.build(
             store_manager=manager,
