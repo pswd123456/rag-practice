@@ -1,23 +1,20 @@
 import pytest
 import pytest_asyncio
-import asyncio
-from typing import AsyncGenerator
+from typing import AsyncGenerator, List
 from unittest.mock import MagicMock, patch
 from httpx import AsyncClient, ASGITransport
-from app.api import deps
-from app.main import app
+from elasticsearch import Elasticsearch
 
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from sqlmodel.pool import StaticPool
 
-# 导入需要清除缓存的函数
-from app.services.file_storage import get_minio_client
-from app.services.retrieval.vector_store import get_chroma_client
-
-# 导入应用配置
+from app.api import deps
+from app.main import app
 from app.core.config import settings
+from app.services.file_storage import get_minio_client
+from app.services.retrieval.es_client import get_es_client
 
 # ==========================================
 # 1. 数据库 Fixtures
@@ -27,82 +24,46 @@ TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
 @pytest_asyncio.fixture(name="db_session")
 async def db_session_fixture() -> AsyncGenerator[AsyncSession, None]:
-    """
-    创建一个连接到内存 SQLite 的临时数据库会话。
-    关键点：它会覆盖 app.dependency_overrides，强制 API 使用这个测试 DB。
-    """
-    # 1. 在当前 Event Loop 中创建 Engine
     engine = create_async_engine(
         TEST_DATABASE_URL, 
         connect_args={"check_same_thread": False}, 
         poolclass=StaticPool,
     )
-    
-    # 2. 初始化表结构
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
 
-    # 3. 创建 Session 工厂
-    session_maker = async_sessionmaker(
-        bind=engine,
-        class_=AsyncSession,
-        expire_on_commit=False,
-        autoflush=False
-    )
+    session_maker = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False, autoflush=False)
 
-    # 4. 定义依赖覆盖函数
     async def override_get_db_session():
         async with session_maker() as session:
             yield session
 
-    # 5. 【关键】应用依赖覆盖
     app.dependency_overrides[deps.get_db_session] = override_get_db_session
 
-    # 6. Yield Session 给测试函数直接使用 (如果需要)
     async with session_maker() as session:
         yield session
 
-    # 7. 清理：移除依赖覆盖，删除表，关闭引擎
     app.dependency_overrides.clear()
-    
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.drop_all)
-    
     await engine.dispose()
 
 # ==========================================
-# 2. Service Mocks (拦截外部 IO)
+# 2. Service Mocks
 # ==========================================
 
 @pytest.fixture(autouse=True)
 def mock_minio():
     """全局 Mock MinIO 客户端"""
-    # 🟢 [关键修复] 清除 LRU 缓存，防止测试间 Mock 对象混淆
     get_minio_client.cache_clear()
-    
     with patch("app.services.file_storage.Minio") as mock:
         client = mock.return_value
         client.bucket_exists.return_value = True
         yield client
 
 @pytest.fixture(autouse=True)
-def mock_chroma():
-    """全局 Mock ChromaDB 客户端"""
-    # 🟢 [关键修复] 清除 LRU 缓存
-    get_chroma_client.cache_clear()
-
-    with patch("app.services.retrieval.vector_store_manager.Chroma") as mock_chroma_cls, \
-         patch("app.services.retrieval.vector_store.chromadb.HttpClient") as mock_http_client:
-        
-        store_instance = mock_chroma_cls.return_value
-        store_instance._collection.count.return_value = 10
-        store_instance.delete.return_value = True
-        
-        yield store_instance
-
-@pytest.fixture(autouse=True)
 def mock_redis():
-    """全局 Mock Redis/Arq 连接池"""
+    """全局 Mock Redis/Arq"""
     with patch("app.api.routes.knowledge.create_pool") as mock_pool_knowledge, \
          patch("app.api.routes.evaluation.create_pool") as mock_pool_eval, \
          patch("app.api.routes.evaluation.RedisSettings"), \
@@ -117,29 +78,81 @@ def mock_redis():
             
         mock_pool_knowledge.side_effect = return_mock
         mock_pool_eval.side_effect = return_mock
-        
         yield mock_redis_instance
+
+# ==========================================
+# 3. Embedding & LLM Mocks (关键修复)
+# ==========================================
+
+class FakeEmbeddings:
+    """
+    用于测试的伪造 Embedding 类，返回固定维度的浮点数向量。
+    """
+    def embed_documents(self, texts: List[str]) -> List[List[float]]:
+        # 返回符合配置维度的向量 (e.g., 1024个 0.1)
+        return [[0.1] * settings.EMBEDDING_DIM for _ in texts]
+
+    def embed_query(self, text: str) -> List[float]:
+        return [0.1] * settings.EMBEDDING_DIM
 
 @pytest.fixture(autouse=True)
 def mock_llm_factory():
-    """全局 Mock LLM 和 Embedding 工厂"""
+    """
+    全局 Mock LLM 和 Embedding。
+    强制 setup_embed_model 返回 FakeEmbeddings 实例。
+    """
     with patch("app.services.factories.llm_factory.ChatOpenAI") as mock_chat, \
-         patch("app.services.factories.embedding_factory.DashScopeEmbeddings") as mock_embed:
-        yield mock_chat, mock_embed
+         patch("app.services.factories.embedding_factory.DashScopeEmbeddings") as mock_embed_cls:
+        
+        # [Fix] 这里的 return_value 必须是 FakeEmbeddings 的实例
+        # 这样当代码调用 DashScopeEmbeddings(...) 时，就会得到这个 fake 实例
+        mock_embed_cls.return_value = FakeEmbeddings()
+        
+        yield mock_chat, mock_embed_cls
 
+# ==========================================
+# 4. Elasticsearch Fixtures
+# ==========================================
+
+@pytest.fixture(scope="session")
+def es_client():
+    """连接真实 ES (用于集成测试)"""
+    client = Elasticsearch(
+        hosts=settings.ES_URL,
+        request_timeout=5,
+        max_retries=1
+    )
+    try:
+        if not client.ping():
+            pytest.skip("Elasticsearch 未运行，跳过集成测试")
+    except Exception:
+        pytest.skip("Elasticsearch 连接失败，跳过集成测试")
+    yield client
+    client.close()
+
+@pytest.fixture
+def clean_es_index(es_client):
+    """清理测试索引"""
+    prefix = f"{settings.ES_INDEX_PREFIX}_*"
+    es_client.indices.delete(index=prefix, ignore=[400, 404])
+    yield
+    es_client.indices.delete(index=prefix, ignore=[400, 404])
+
+# Helper
 class AsyncMock(MagicMock):
     async def __call__(self, *args, **kwargs):
         return super(AsyncMock, self).__call__(*args, **kwargs)
-    
 
 @pytest_asyncio.fixture
 async def async_client(db_session) -> AsyncGenerator[AsyncClient, None]: 
-    """
-    创建一个异步 HTTP 客户端。
-    依赖 db_session 确保在 Client 发起请求前，App 的 DB 依赖已经被 Override。
-    """
-    async with AsyncClient(
-        transport=ASGITransport(app=app),
-        base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        yield client
+
+@pytest.fixture
+def mock_es_client():
+    get_es_client.cache_clear()
+    with patch("app.services.retrieval.es_client.Elasticsearch") as mock_cls:
+        client = mock_cls.return_value
+        client.ping.return_value = True
+        client.indices.exists.return_value = False
         yield client

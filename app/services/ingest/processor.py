@@ -13,38 +13,32 @@ from app.domain.models import Document, DocStatus, Chunk, Knowledge
 from app.services.loader.docling_loader import load_docling_document
 from app.services.loader import load_single_document, split_docs
 from app.services.factories import setup_embed_model
-from app.services.retrieval import setup_vector_store
+# [Modify] 引入 VectorStoreManager，不再使用 setup_vector_store
+from app.services.retrieval.vector_store_manager import VectorStoreManager
 from app.services.file_storage import get_minio_client
 
 logger = logging.getLogger(__name__)
 
 async def process_document_pipeline(db: AsyncSession, doc_id: int):
     """
-    核心文档处理管道 (异步版)：下载 -> 加载(自动路由) -> 切分 -> 向量化 -> 存储
-    
-    关键策略：
-    1. DB 操作使用 await。
-    2. 文件下载、文档解析(CPU密集)、向量库写入(同步网络IO) 使用 asyncio.to_thread 放入线程池，
-       避免阻塞 Worker 的主事件循环。
+    核心文档处理管道 (异步版)：下载 -> 加载(自动路由) -> 切分 -> 向量化 -> ES存储
     """
-    # 1. 获取文档并预加载关联的 Knowledge (避免 lazy load 报错)
+    # 1. 获取文档并预加载关联的 Knowledge
     stmt = select(Document).where(Document.id == doc_id).options(selectinload(Document.knowledge_base))
     result = await db.exec(stmt)
     doc = result.first()
 
     if not doc:
         logger.error(f"文档 {doc_id} 不存在")
-        # 这种情况下没法更新状态，只能抛错或记录日志
         raise ValueError(f"文档 {doc_id} 不存在")
     
     knowledge = doc.knowledge_base
-    # 双重检查，防止脏数据
     if not knowledge:
-        # 尝试手动查一次
         knowledge = await db.get(Knowledge, doc.knowledge_base_id)
         if not knowledge:
             raise ValueError(f"关联的知识库 {doc.knowledge_base_id} 不存在")
 
+    # [Note] collection_name 将作为 ES 索引的后缀
     collection_name = f"kb_{knowledge.id}"
     logger.info(f"开始处理文档 {doc_id} | KB: {knowledge.name} | File: {doc.filename}")
 
@@ -59,11 +53,9 @@ async def process_document_pipeline(db: AsyncSession, doc_id: int):
         minio_client = get_minio_client()
         original_suffix = Path(doc.filename).suffix.lower()
         
-        # 创建临时文件
         with tempfile.NamedTemporaryFile(delete=False, suffix=original_suffix) as tmp_file:
             temp_file_path = tmp_file.name
         
-        # 在线程中执行下载
         def _download_task():
             minio_client.fget_object(
                 bucket_name=settings.MINIO_BUCKET_NAME,
@@ -83,11 +75,15 @@ async def process_document_pipeline(db: AsyncSession, doc_id: int):
 
         raw_docs = await asyncio.to_thread(_load_task)
         
-        # 3. 注入元数据 (内存操作，无需 await)
+        # 3. 注入元数据 (关键步骤)
+        # 这些 metadata 会被写入 ES，后续用于 filter
         for d in raw_docs:
             d.metadata["source"] = doc.filename 
             d.metadata["doc_id"] = doc.id
             d.metadata["knowledge_id"] = doc.knowledge_base_id
+            # 确保 page_number 存在 (Docling 可能会生成 page, 标准 loader 可能是 page_number)
+            if "page" in d.metadata and "page_number" not in d.metadata:
+                d.metadata["page_number"] = d.metadata["page"]
 
         # 4. 切分 (CPU Blocking -> Thread)
         def _split_task():
@@ -95,24 +91,37 @@ async def process_document_pipeline(db: AsyncSession, doc_id: int):
         
         splitted_docs = await asyncio.to_thread(_split_task)
         
-        # 5. 向量化与入库 (Network Blocking -> Thread)
-        # Chroma 的 add_documents 内部会调用 Embedding API (Network) 和写入 DB (IO/Network)
+        # 5. [Modify] 向量化与入库 ES (Network Blocking -> Thread)
         def _vector_store_task():
             embed_model = setup_embed_model(knowledge.embed_model)
-            vector_store = setup_vector_store(collection_name, embed_model)
+            
+            # 初始化 Manager (会自动处理索引前缀)
+            manager = VectorStoreManager(collection_name, embed_model)
+            
+            # 确保 ES 索引和 Mapping 存在 (IK分词器等)
+            manager.ensure_index()
+            
+            # 获取 Store 实例
+            vector_store = manager.get_vector_store()
+            
+            # 批量写入文档
+            # add_documents 会自动调用 embedding 模型生成向量，并写入 ES
+            # 返回值是 ES 生成的 document IDs (List[str])
+            logger.info(f"正在向 ES 索引 {manager.index_name} 写入 {len(splitted_docs)} 个切片...")
             return vector_store.add_documents(splitted_docs)
 
-        chroma_ids = await asyncio.to_thread(_vector_store_task)
+        # 获取 ES 返回的 ID 列表
+        es_ids = await asyncio.to_thread(_vector_store_task)
 
         # 6. 保存 Chunk 映射 (DB Async)
         chunks_to_save = []
-        for i, (c_id, s_docs) in enumerate(zip(chroma_ids, splitted_docs)):
+        for i, (es_id, s_docs) in enumerate(zip(es_ids, splitted_docs)):
             chunk = Chunk(
                 document_id=doc.id, # type: ignore
-                chroma_id=c_id,
+                chroma_id=es_id,    # [Note] 这里复用 chroma_id 字段存储 ES 的 _id
                 chunk_index=i,
                 content=s_docs.page_content,
-                page_number=s_docs.metadata.get("page_number") or s_docs.metadata.get("page")
+                page_number=s_docs.metadata.get("page_number")
             )
             chunks_to_save.append(chunk)
         
@@ -126,11 +135,8 @@ async def process_document_pipeline(db: AsyncSession, doc_id: int):
 
     except Exception as e:
         logger.error(f"文档 {doc_id} 处理失败: {e}", exc_info=True)
-        # 回滚逻辑
-        # 注意：SQLAlchemy AsyncSession 在异常后通常需要 rollback 才能继续使用
         await db.rollback()
         
-        # 重新获取 doc 对象 (因为 rollback 后 session 中的对象可能过期)
         doc = await db.get(Document, doc_id)
         if doc:
             doc.status = DocStatus.FAILED

@@ -2,134 +2,124 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, List, Optional
 
-from langchain_chroma import Chroma
-from langchain_core.retrievers import BaseRetriever
+from langchain_elasticsearch import ElasticsearchStore
+from langchain_core.embeddings import Embeddings
+from langchain_core.vectorstores import VectorStore
 
-from app.services.ingest import build_or_get_vector_store
+from app.core.config import settings
+from app.services.retrieval.es_client import get_es_client
 
 logger = logging.getLogger(__name__)
 
-# 🟢 1. 定义全局缓存 (Collection Name -> Chroma Instance)
-_VECTOR_STORE_CACHE: Dict[str, Chroma] = {}
-
 class VectorStoreManager:
     """
-    管理向量数据库生命周期，提供热加载与统计接口。
+    Elasticsearch 向量库管理器
+    负责索引的创建(Mapping配置)、获取和清理。
     """
 
-    def __init__(self, collection_name: str, embed_model: Any, default_top_k: int = 4):
-        self.collection_name = collection_name
+    def __init__(self, collection_name: str, embed_model: Embeddings):
+        """
+        :param collection_name: 对应 ES 中的 index_name
+        :param embed_model: LangChain Embeddings 实例
+        """
+        # 统一添加前缀，避免索引名冲突
+        self.index_name = f"{settings.ES_INDEX_PREFIX}_{collection_name}".lower()
         self.embed_model = embed_model
-        self.default_top_k = default_top_k
-        self._vector_store: Optional[Chroma] = None
+        self.client = get_es_client()
 
-    @property
-    def vector_store(self) -> Chroma:
-        if self._vector_store is None:
-            logger.debug("Vector store 未加载，自动触发 ensure_collection()。")
-            self.ensure_collection()
-        assert self._vector_store is not None  # 类型检查
-        return self._vector_store
-
-    def ensure_collection(self, rebuild: bool = False) -> Chroma:
+    def get_vector_store(self) -> ElasticsearchStore:
         """
-        确保向量库已就绪，必要时重新构建。
-        增加内存缓存机制，避免重复初始化造成的网络开销。
+        获取 LangChain 的 ElasticsearchStore 实例 (Lazy Load)
         """
-        # 🟢 2. 缓存命中检查
-        # 如果不需要重建，且缓存中有，直接返回
-        if not rebuild and self.collection_name in _VECTOR_STORE_CACHE:
-            # logger.debug(f"⚡️ [Cache Hit] 复用向量库连接: {self.collection_name}")
-            self._vector_store = _VECTOR_STORE_CACHE[self.collection_name]
-            return self._vector_store
+        # 确保索引存在（带正确的 Mapping）
+        self.ensure_index()
 
-        logger.info("初始化/重建集合 %s (rebuild=%s)...", self.collection_name, rebuild)
-        
-        # 真正的初始化逻辑 (包含网络请求)
-        store = build_or_get_vector_store(
-            self.collection_name,
-            embed_model=self.embed_model,
-            force_rebuild=rebuild,
-            auto_ingest=False
+        return ElasticsearchStore(
+            es_connection=self.client,
+            index_name=self.index_name,
+            embedding=self.embed_model,
+            # 指定存储文本和向量的字段名，需与 ensure_index 中的 Mapping 保持一致
+            query_field="text",
+            vector_query_field="vector",
+            # 距离策略: COSINE, EUCLIDEAN, DOT_PRODUCT
+            # 注意：这里仅影响 LangChain 内部的一些逻辑，核心约束在 ES Mapping 中
+            distance_strategy="COSINE" 
         )
+
+    def ensure_index(self) -> None:
+        """
+        核心方法：检查索引是否存在，不存在则创建并应用 IK 分词和向量 Mapping。
+        """
+        if self.client.indices.exists(index=self.index_name):
+            # logger.debug(f"索引 {self.index_name} 已存在，跳过创建。")
+            return
+
+        logger.info(f"正在创建 Elasticsearch 索引: {self.index_name}")
         
-        # 🟢 3. 更新缓存
-        _VECTOR_STORE_CACHE[self.collection_name] = store
-        self._vector_store = store
-        
-        return self._vector_store
-
-    def reload(self, force_rebuild: bool = False) -> Chroma:
-        """
-        显式重新加载/重建集合。
-        """
-        # 🟢 4. 清理缓存 (Cache Invalidation)
-        if self.collection_name in _VECTOR_STORE_CACHE:
-            logger.info(f"正在清理集合缓存: {self.collection_name}")
-            del _VECTOR_STORE_CACHE[self.collection_name]
-        
-        self._vector_store = None
-        return self.ensure_collection(rebuild=force_rebuild)
-
-    def as_retriever(self, search_kwargs: Optional[Dict[str, Any]] = None) -> BaseRetriever:
-        """
-        暴露 LangChain Retriever。
-        """
-        kwargs = {"search_kwargs": {"k": self.default_top_k}}
-        if search_kwargs:
-            # deep merge search_kwargs
-            if "filter" in search_kwargs:
-                kwargs["search_kwargs"]["filter"] = search_kwargs["filter"]
-            if "k" in search_kwargs:
-                kwargs["search_kwargs"]["k"] = search_kwargs["k"]
-            # Handle other potential kwargs
-            for k, v in search_kwargs.items():
-                 if k not in ["filter", "k"]:
-                     kwargs["search_kwargs"][k] = v
-                     
-        return self.vector_store.as_retriever(**kwargs)
-
-    def stats(self) -> Dict[str, Any]:
-        """
-        返回集合统计信息用于监控。
-        """
-        try:
-            chroma_collection = self.vector_store._collection
-            chunk_count = chroma_collection.count()
-            metadata_fields: Dict[str, Any] = {}
-
-            if chunk_count > 0:
-                # 优化: limit=1 减少传输
-                snapshot = chroma_collection.get(limit=1, include=["metadatas"])
-                metadatas = snapshot.get("metadatas")
-                if metadatas and len(metadatas) > 0:
-                    first_item = metadatas[0]
-                    if first_item:
-                        metadata_fields = dict(first_item)
-
-            return {
-                "collection_name": self.collection_name,
-                "chunk_count": chunk_count,
-                "metadata_fields": list(metadata_fields.keys()),
+        # -------------------------------------------------------
+        # Mapping 定义 (关键)
+        # -------------------------------------------------------
+        mapping_body = {
+            "settings": {
+                "number_of_shards": 1,
+                "number_of_replicas": 0
+            },
+            "mappings": {
+                "properties": {
+                    # 1. 文本字段：配置 IK 分词器
+                    "text": {
+                        "type": "text",
+                        "analyzer": "ik_max_word",      # 索引时：细粒度分词 (e.g. "中华人民共和国" -> "中华", "华人", "共和国"...)
+                        "search_analyzer": "ik_smart"   # 查询时：粗粒度分词 (e.g. "中华人民共和国" -> "中华人民共和国")
+                    },
+                    # 2. 向量字段：配置 Dense Vector
+                    "vector": {
+                        "type": "dense_vector",
+                        "dims": settings.EMBEDDING_DIM, # 必须与模型维度一致
+                        "index": True,                  # 开启 HNSW 索引
+                        "similarity": "cosine"          # 相似度算法: cosine, l2_norm, dot_product
+                    },
+                    # 3. 元数据字段：LangChain 默认将 metadata 放在 metadata 字段下
+                    "metadata": {
+                        "type": "object",
+                        "dynamic": True
+                    }
+                }
             }
+        }
+
+        try:
+            self.client.indices.create(index=self.index_name, body=mapping_body)
+            logger.info(f"索引 {self.index_name} 创建成功 (Dim: {settings.EMBEDDING_DIM}, Analyzer: IK)。")
         except Exception as e:
-            logger.error(f"获取统计信息失败: {e}")
-            return {"error": str(e)}
+            logger.error(f"创建索引 {self.index_name} 失败: {e}")
+            raise e
+
+    def delete_index(self) -> bool:
+        """
+        删除整个索引 (用于知识库删除)
+        """
+        if self.client.indices.exists(index=self.index_name):
+            try:
+                self.client.indices.delete(index=self.index_name)
+                logger.info(f"索引 {self.index_name} 已删除。")
+                return True
+            except Exception as e:
+                logger.error(f"删除索引失败: {e}")
+                return False
+        return True
 
     def delete_vectors(self, ids: List[str]) -> bool:
         """
-        根据 Chroma ID 列表从向量库中批量删除切片。
+        根据 ID 列表删除文档
         """
         if not ids:
             return True
-        
-        logger.info("正在从 Chroma 集合 %s 删除 %s 个向量...", self.collection_name, len(ids))
         try:
-            self.vector_store._collection.delete(ids=ids)
-            logger.info("Chroma 向量删除成功。")
+            self.get_vector_store().delete(ids)
             return True
         except Exception as e:
-            logger.error(f"从 Chroma 删除向量失败: {e}", exc_info=True)
-            raise
+            logger.error(f"批量删除向量失败: {e}")
+            raise e

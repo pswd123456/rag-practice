@@ -1,50 +1,63 @@
-# tests/services/test_retrieval_factory.py
 import pytest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from app.services.factories.retrieval_factory import RetrievalFactory
 from app.services.retrieval.vector_store_manager import VectorStoreManager
 
-def test_create_dense_retriever(mock_chroma):
-    """
-    测试默认策略 (Dense) 下 Retriever 的参数构造
-    """
-    # 1. Mock Manager
+def test_create_dense_retriever():
+    """测试默认 (Dense) 策略"""
+    # Mock Manager
     manager = MagicMock(spec=VectorStoreManager)
-    manager.vector_store = mock_chroma
+    # [Fix] 显式设置 client 和 index_name，防止 AttributeError
+    manager.client = MagicMock()
+    manager.index_name = "test_index"
     
-    # 模拟 as_retriever 方法
-    mock_chroma.as_retriever.return_value = "RetrieverInstance"
-
-    # 2. 调用工厂
-    retriever = RetrievalFactory.create_retriever(
+    mock_store = MagicMock()
+    manager.get_vector_store.return_value = mock_store
+    
+    # 调用工厂
+    RetrievalFactory.create_retriever(
         store_manager=manager,
         strategy="dense",
         top_k=5,
         knowledge_id=101
     )
-
-    # 3. 验证参数透传
-    # 确保调用了 manager.vector_store.as_retriever
-    # 并且 search_kwargs 包含了 filter 和 k
-    call_kwargs = mock_chroma.as_retriever.call_args[1]
-    search_kwargs = call_kwargs["search_kwargs"]
     
-    assert search_kwargs["k"] == 5
-    assert search_kwargs["filter"] == {"knowledge_id": 101}
-    assert retriever == "RetrieverInstance"
-
-def test_strategy_fallback(mock_chroma):
-    """
-    测试未知策略回退机制 (Should fallback to Dense)
-    """
-    manager = MagicMock(spec=VectorStoreManager)
-    manager.vector_store = mock_chroma
-    
-    RetrievalFactory.create_retriever(
-        store_manager=manager,
-        strategy="unknown_strategy_xyz", # 传入乱码策略
-        top_k=3
+    # 验证是否调用了 store.as_retriever
+    mock_store.as_retriever.assert_called_with(
+        search_type="similarity",
+        search_kwargs={
+            "k": 5, 
+            "filter": [{"term": {"metadata.knowledge_id": 101}}]
+        }
     )
-    
-    # 验证是否还是调用了 as_retriever (Dense逻辑)
-    assert mock_chroma.as_retriever.called
+
+def test_create_hybrid_retriever():
+    """测试 Hybrid 策略 (ES RRF)"""
+    manager = MagicMock(spec=VectorStoreManager)
+    # [Fix] 显式设置 client 和 index_name
+    manager.client = MagicMock()
+    manager.index_name = "test_index"
+    manager.embed_model = MagicMock() # 同时也需要 embed_model
+
+    # Hybrid 策略会实例化一个新的 ElasticsearchStore
+    with patch("app.services.factories.retrieval_factory.ElasticsearchStore") as MockESStore:
+        mock_hybrid_store = MockESStore.return_value
+        
+        RetrievalFactory.create_retriever(
+            store_manager=manager,
+            strategy="hybrid",
+            top_k=3,
+            knowledge_id=202
+        )
+        
+        # 验证是否使用了 DenseVectorStrategy(hybrid=True)
+        call_kwargs = MockESStore.call_args[1]
+        strategy = call_kwargs.get("strategy")
+        assert strategy is not None
+        # 验证策略属性
+        assert getattr(strategy, "hybrid", False) is True
+        
+        # 验证 filter
+        mock_hybrid_store.as_retriever.assert_called()
+        args = mock_hybrid_store.as_retriever.call_args[1]
+        assert args["search_kwargs"]["filter"] == [{"term": {"metadata.knowledge_id": 202}}]

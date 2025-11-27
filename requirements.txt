@@ -11,9 +11,9 @@ psycopg2-binary
 alembic
 redis
 minio
-chromadb
 asyncpg
 aiosqlite
+elasticsearch
 
 # --- Async Tasks ---
 arq
@@ -23,8 +23,8 @@ langchain
 langchain-community
 langchain-core
 langchain-openai
-langchain-chroma
 langchain-text-splitters
+langchain-elasticsearch>=0.2.0
 tiktoken
 dashscope
 

@@ -1,6 +1,6 @@
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 from dotenv import find_dotenv
 from pydantic import computed_field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -44,9 +44,15 @@ class Settings(BaseSettings):
     DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"
     DEEPSEEK_API_KEY: str
 
-    # db
-    CHROMA_SERVER_HOST: str = "chroma"
-    CHROMA_SERVER_PORT: int = 8000
+    #es
+    ES_URL: str = "http://elasticsearch:9200"
+    ES_INDEX_PREFIX: str = "rag"
+    ES_USER: Optional[str] = None
+    ES_PASSWORD: Optional[str] = None
+    ES_TIMEOUT: int = 30
+    EMBEDDING_DIM: int = 1024
+
+    #db
     DATABASE_URL: str
 
     # retrieval
