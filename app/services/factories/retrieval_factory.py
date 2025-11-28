@@ -2,8 +2,7 @@ import logging
 from typing import Optional, Any, Dict, List
 
 from langchain_core.retrievers import BaseRetriever
-# [NEW] 引入 ES 核心组件
-from langchain_elasticsearch import ElasticsearchStore, DenseVectorStrategy
+
 from app.services.retrieval.hybrid_retriever import ESHybridRetriever
 from app.services.retrieval.vector_store_manager import VectorStoreManager
 
@@ -83,7 +82,7 @@ class RetrievalFactory:
     def _create_hybrid_retriever(manager: VectorStoreManager, search_kwargs: dict, **kwargs) -> BaseRetriever:
         """
         构建 Hybrid (向量 + 关键词) 检索
-        使用应用层 RRF 实现，不依赖 ES 白金版特性。
+        使用应用层 RRF 实现
         """
         top_k = search_kwargs.get("k", 4)
         

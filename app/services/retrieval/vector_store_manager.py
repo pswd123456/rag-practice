@@ -71,8 +71,8 @@ class VectorStoreManager:
                     # 1. 文本字段：配置 IK 分词器
                     "text": {
                         "type": "text",
-                        "analyzer": "ik_max_word",      # 索引时：细粒度分词 (e.g. "中华人民共和国" -> "中华", "华人", "共和国"...)
-                        "search_analyzer": "ik_smart"   # 查询时：粗粒度分词 (e.g. "中华人民共和国" -> "中华人民共和国")
+                        "analyzer": "ik_max_word",      # 索引时：细粒度分词 (e.g. "我爱吃牛肉烧卖" -> "我", "爱吃", "牛肉烧卖"...)
+                        "search_analyzer": "ik_smart"   # 查询时：粗粒度分词 (e.g. "我爱吃牛肉烧卖" -> "我爱吃牛肉烧卖")
                     },
                     # 2. 向量字段：配置 Dense Vector
                     "vector": {

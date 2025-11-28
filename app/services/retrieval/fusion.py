@@ -48,6 +48,7 @@ def rrf_fusion(
             
             # RRF 公式: weight * (1 / (k + rank))
             # rank 从 0 开始，所以 +1
+            # k = 60 weight = 1 的配置scores 范围为 [0, 0.033]
             score_increment = weight * (1 / (k + rank + 1))
             fused_scores[doc_id]["score"] += score_increment
 
