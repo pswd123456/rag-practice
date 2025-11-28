@@ -88,6 +88,8 @@ data/
 
 embed_models/
 
+models/
+
 logs/
 *.log
 

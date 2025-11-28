@@ -95,6 +95,14 @@ class Settings(BaseSettings):
     @property
     def REDIS_URL(self) -> str:
         return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}"
+
+    @computed_field
+    @property
+    def CHUNK_TOKENIZER_ID(self) -> str:
+        local_path = PROJECT_ROOT / "models" / "paraphrase-multilingual-MiniLM-L12-v2"
+        if local_path.exists():
+            return str(local_path)
+        return "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
     
     model_config = SettingsConfigDict(
         env_file=ENV_PATH,
