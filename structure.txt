@@ -1,7 +1,6 @@
 .
 ├── Dockerfile
 ├── README.md
-├── RELEASE_NOTES.md
 ├── app
 │   ├── __init__.py
 │   ├── api
@@ -15,8 +14,7 @@
 │   ├── core
 │   │   ├── __init__.py
 │   │   ├── config.py
-│   │   ├── logging_setup.py
-│   │   └── prompts.py
+│   │   └── logging_setup.py
 │   ├── db
 │   │   ├── __init__.py
 │   │   └── session.py
@@ -24,7 +22,6 @@
 │   │   ├── __init__.py
 │   │   ├── models
 │   │   │   ├── __init__.py
-│   │   │   ├── chunk.py
 │   │   │   ├── document.py
 │   │   │   ├── experiment.py
 │   │   │   ├── knowledge.py
@@ -36,54 +33,44 @@
 │   ├── services
 │   │   ├── __init__.py
 │   │   ├── document_crud.py
-│   │   ├── evaluation_crud.py
-│   │   ├── evaluation_service.py
+│   │   ├── evaluation
+│   │   │   ├── __init__.py
+│   │   │   ├── config.py
+│   │   │   ├── evaluation_crud.py
+│   │   │   ├── evaluation_service.py
+│   │   │   └── runner.py
 │   │   ├── factories
 │   │   │   ├── __init__.py
 │   │   │   ├── embedding_factory.py
-│   │   │   └── llm_factory.py
+│   │   │   ├── llm_factory.py
+│   │   │   └── retrieval_factory.py
 │   │   ├── file_storage.py
 │   │   ├── generation
 │   │   │   ├── __init__.py
 │   │   │   └── qa_service.py
 │   │   ├── ingest
 │   │   │   ├── __init__.py
-│   │   │   ├── ingest.py
 │   │   │   └── processor.py
 │   │   ├── knowledge_crud.py
 │   │   ├── loader
 │   │   │   ├── __init__.py
+│   │   │   ├── docling_loader.py
 │   │   │   └── loader.py
 │   │   ├── pipelines
 │   │   │   ├── __init__.py
 │   │   │   └── rag_pipeline.py
 │   │   └── retrieval
 │   │       ├── __init__.py
+│   │       ├── es_client.py
+│   │       ├── fusion.py
+│   │       ├── hybrid_retriever.py
 │   │       ├── service.py
-│   │       ├── vector_store.py
 │   │       └── vector_store_manager.py
 │   └── worker.py
 ├── docker-compose.yml
 ├── docs
-│   ├── architecture.md
-│   ├── experiments
-│   │   └── log.md
-│   ├── index.md
-│   ├── reference
-│   │   ├── core.md
-│   │   ├── evaluation.md
-│   │   ├── generation.md
-│   │   ├── ingest.md
-│   │   ├── models.md
-│   │   ├── pipeline.md
-│   │   └── retrieval.md
-│   └── setup.md
-├── environment.yml
-├── evaluation
-│   ├── __init__.py
-│   ├── config.py
-│   ├── runner.py
-│   └── testset.py
+├── es
+│   └── Dockerfile
 ├── frontend
 │   ├── api.py
 │   ├── app.py
@@ -95,18 +82,9 @@
 │   │   ├── settings.py
 │   │   └── sidebar.py
 │   └── utils.py
-├── logs
-│   └── project.log
 ├── mkdocs.yml
-├── pytest.ini
+├── models
+│   └── paraphrase-multilingual-MiniLM-L12-v2
 ├── requirements.txt
 ├── structure.txt
 └── tests
-    ├── __init__.py
-    ├── conftest.py
-    ├── test_api_smoke.py
-    ├── test_chat_flow.py
-    ├── test_ingest_processor.py
-    └── test_worker_config.py
-
-23 directories, 86 files

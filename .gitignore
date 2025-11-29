@@ -41,7 +41,7 @@ __pycache__/
 dist/
 build/
 *.whl
-
+.pytest_cache
 
 # =================================================================
 # 5. Jupyter Notebook 检查点 (JUPYTER)
