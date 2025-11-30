@@ -9,49 +9,32 @@ from app.services.retrieval.vector_store_manager import VectorStoreManager
 logger = logging.getLogger(__name__)
 
 class RetrievalFactory:
-    """
-    负责根据策略 (Strategy) 和配置 (Config) 组装并返回 Retriever 实例。
-    """
-
     @staticmethod
     def create_retriever(
         store_manager: VectorStoreManager,
-        strategy: str = "default",
-        top_k: int = 4,
+        strategy: str = "hybrid", 
+        top_k: int = 50,          
         knowledge_id: Optional[int] = None,
         **kwargs: Any
     ) -> BaseRetriever:
-        """
-        核心工厂方法：根据策略返回对应的 Retriever。
-        """
         
-        # 1. 构造基础查询参数
-        # [Modify] ES 的 filter 需要特定格式，稍后在 _build_es_filter 中处理
         search_kwargs: Dict[str, Any] = {"k": top_k}
-        
-        # 构建 ES Filter DSL
         es_filter = RetrievalFactory._build_es_filter(knowledge_id)
         if es_filter:
             search_kwargs["filter"] = es_filter
             
         logger.debug(f"构建 Retriever | 策略: {strategy} | KnowledgeID: {knowledge_id} | TopK: {top_k}")
 
-        # 2. 根据策略分发
-        if strategy in ["default", "dense", "dense_only"]:
-            return RetrievalFactory._create_dense_retriever(store_manager, search_kwargs)
+        if strategy in ["dense", "dense_only"]:
+             return RetrievalFactory._create_dense_retriever(store_manager, search_kwargs)
             
-        elif strategy == "hybrid":
-            return RetrievalFactory._create_hybrid_retriever(store_manager, search_kwargs, **kwargs)
-            
-        elif strategy == "rerank":
-            # Rerank 策略通常基于 Hybrid 或 Dense 的召回结果，再加一层重排序
-            # 这里先复用 Hybrid 作为底座，后续在 Pipeline 层处理 Rerank 逻辑
-            # 或者直接返回 Hybrid，由 Pipeline 包装
-            return RetrievalFactory._create_hybrid_retriever(store_manager, search_kwargs, **kwargs)
-            
+        elif strategy in ["default", "hybrid", "rerank"]: 
+             # Rerank 策略在 Retrieval 阶段本质上就是 Hybrid 召回
+             return RetrievalFactory._create_hybrid_retriever(store_manager, search_kwargs, **kwargs)
+        
         else:
-            logger.warning(f"未知策略 '{strategy}'，回退到 Dense 检索。")
-            return RetrievalFactory._create_dense_retriever(store_manager, search_kwargs)
+             logger.warning(f"未知策略 '{strategy}'，回退到 Dense 检索。")
+             return RetrievalFactory._create_dense_retriever(store_manager, search_kwargs)
 
     @staticmethod
     def _build_es_filter(knowledge_id: Optional[int]) -> List[Dict[str, Any]]:

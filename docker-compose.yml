@@ -213,6 +213,31 @@ services:
               capabilities: [gpu]
 
   # ----------------------------------------------------------------
+  # [新增] Rerank 服务 (TEI)
+  # ----------------------------------------------------------------
+  rerank-service:
+    image: ghcr.io/huggingface/text-embeddings-inference:turing-1.5
+    restart: always
+    volumes:
+      - ./models/bge-reranker-v2-m3:/data
+    ports:
+      - "8003:80"
+    environment:
+      - TZ=Asia/Shanghai
+    # 关键修改：增加 --dtype float16
+    command: --model-id /data --port 80 --dtype float16
+    networks:
+      - rag-net
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+
+  # ----------------------------------------------------------------
   # 3. 可观测性服务 (Langfuse) 
   # ----------------------------------------------------------------
   langfuse-server:
@@ -227,7 +252,7 @@ services:
       minio:
         condition: service_started
     ports:
-      - "3001:3000"
+      - "4000:3000"
     environment:
       - NODE_ENV=production
       - CLICKHOUSE_URL=http://clickhouse:8123

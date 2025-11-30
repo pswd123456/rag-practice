@@ -3,11 +3,12 @@ import api
 
 def render_chat_tab(selected_kb):
     # 1. 顶部配置区
-    col_s1, col_s2, col_s3 = st.columns([1, 1, 3])
+    # [Modify] 调整列宽比例适配新控件
+    col_s1, col_s2, col_s3 = st.columns([1.2, 1.2, 2.6])
+    
     with col_s1:
-        # [修改] 添加 DeepSeek 模型
         llm_model = st.selectbox(
-            "对话模型", 
+            "对话模型 (Generator)", 
             [
                 "qwen-flash", 
                 "qwen-plus", 
@@ -16,14 +17,28 @@ def render_chat_tab(selected_kb):
                 "deepseek-reasoner",
                 "google/gemini-3-pro-preview-free"
             ],
-            index=0
+            index=0,
+            help="负责根据检索结果生成最终回答的模型"
         )
+        
     with col_s2:
-        strategy = st.selectbox("检索策略", ["default", "dense_only", "hybrid", "rerank"])
+        # [Modify] 移除 Strategy 选择，改为 Final Top K 控制
+        # 这是 Rerank 之后最终保留给 LLM 的文档数量
+        top_k = st.number_input(
+            "Final Top K", 
+            min_value=1, 
+            max_value=10, 
+            value=5, 
+            help="重排序后，最终保留并喂给 LLM 的文档数量 (Recall 默认为 50)"
+        )
+
     with col_s3:
+        # [Modify] 优化布局，显示 Rerank 状态
         use_stream = st.checkbox("流式输出", value=True)
-        st.write("") 
+        st.caption("🚀 Rerank: `Enabled` (bge-reranker-v2-m3)")
     
+    st.divider()
+
     if "messages" not in st.session_state:
         st.session_state.messages = []
         
@@ -38,9 +53,15 @@ def render_chat_tab(selected_kb):
             if "sources" in msg and msg["sources"]:
                 with st.expander(f"📚 参考了 {len(msg['sources'])} 个切片"):
                     for idx, src in enumerate(msg["sources"]):
+                        # [Opt] 显示 Rerank 分数 (如果有)
+                        score_info = ""
+                        if "score" in src:
+                            score_info = f" (Score: {src['score']:.4f})"
+                            
                         page_num = src.get("page_number")
                         page_info = f" (P{page_num})" if page_num else ""
-                        st.markdown(f"**[{idx+1}] {src['source_filename']}{page_info}**")
+                        
+                        st.markdown(f"**[{idx+1}] {src['source_filename']}{page_info}**{score_info}")
                         st.caption(src['chunk_content'])
 
     # 3. 处理用户输入
@@ -52,11 +73,13 @@ def render_chat_tab(selected_kb):
 
         # 显示助手响应
         with st.chat_message("assistant"):
+            # [Modify] 构建新的 Payload，移除 strategy，添加 top_k
             payload = {
                 "query": prompt,
                 "knowledge_id": selected_kb['id'],
-                "strategy": strategy,
-                "llm_model": llm_model # 传递选中的模型
+                "top_k": top_k,          # Rerank 后的截断数量
+                "llm_model": llm_model   # 选中的生成模型
+                # "rerank_model_name": ... # 可选，不传则使用后端默认配置
             }
             
             full_response = ""
@@ -85,7 +108,7 @@ def render_chat_tab(selected_kb):
 
             # ================= B. 普通模式 =================
             else:
-                with st.spinner(f"正在思考 ({llm_model})..."):
+                with st.spinner(f"正在检索与思考 ({llm_model})..."):
                     success, data = api.chat_query(payload)
                     if success:
                         full_response = data["answer"]
@@ -97,8 +120,13 @@ def render_chat_tab(selected_kb):
 
             # ================= 公共逻辑：显示来源 =================
             if retrieved_sources:
-                with st.expander(f"📚 参考了 {len(retrieved_sources)} 个切片"):
+                with st.expander(f"📚 参考了 {len(retrieved_sources)} 个切片 (Reranked)"):
                     for idx, src in enumerate(retrieved_sources):
+                        # 尝试提取分数 (需确认 API 返回结构中是否包含了 score，可选)
+                        # 如果后端 Source schema 没改，可能需要通过 extra 字段传递，这里暂时做个容错
+                        score_display = ""
+                        # if 'metadata' in src and 'rerank_score' in src['metadata']: ...
+                        
                         page_num = src.get("page_number")
                         page_info = f" (P{page_num})" if page_num else ""
                         st.markdown(f"**[{idx+1}] {src['source_filename']}{page_info}**")

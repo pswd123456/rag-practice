@@ -15,22 +15,29 @@ from app.services.generation.qa_service import QAService
 from app.services.retrieval.retrieval_service import RetrievalService
 from app.services.retrieval.vector_store_manager import VectorStoreManager
 from app.services.factories.retrieval_factory import RetrievalFactory
+from app.services.rerank.rerank_service import RerankService
 
 logger = logging.getLogger(__name__)
 
 
 class RAGPipeline:
-    def __init__(self, retrieval_service: RetrievalService, qa_service: QAService):
+    def __init__(self, 
+                 retrieval_service: RetrievalService, 
+                 qa_service: QAService,
+                 rerank_service: RerankService
+
+    ):
         """
         初始化 RAG 管道，将检索与生成职责解耦。
         """
         logger.debug("初始化 RAGPipeline...")
         self.retrieval_service = retrieval_service
         self.qa_service = qa_service
+        self.rerank_service = rerank_service
         self.langfuse_handler = CallbackHandler()
 
         # [Pipeline 职责]: 编排 Retrieval 和 Generation
-        # qa_service.chain 现在期望接收 Dict
+        # qa_service.chain 期望接收 Dict
         self.generation_chain = self.qa_service.chain
         
         retrieval_node = RunnableLambda(
@@ -53,24 +60,29 @@ class RAGPipeline:
         cls,
         store_manager: VectorStoreManager,
         qa_service: QAService,
+        rerank_service: RerankService, 
         knowledge_id: Optional[int] = None,
-        top_k: int = 3,
-        strategy: str = "default",
-        **kwargs  #允许透传额外参数给 Factory (如 hybrid_alpha)
+        recall_top_k: int = 50, 
+        strategy: str = "hybrid", 
+        **kwargs
     ) -> "RAGPipeline":
         """
         工厂方法：组装 RAGPipeline
         """
-        # 使用 RetrievalFactory 创建检索器，彻底解耦
+        
         retriever = RetrievalFactory.create_retriever(
             store_manager=store_manager,
             strategy=strategy,
-            top_k=top_k,
+            top_k=recall_top_k, 
             knowledge_id=knowledge_id,
             **kwargs
         )
 
-        return cls(RetrievalService(retriever), qa_service)
+        return cls(
+            RetrievalService(retriever), 
+            qa_service,
+            rerank_service
+        )
 
     def _format_docs(self, docs: List[Document]) -> str:
         logger.debug("正在格式化 %s 个检索到的文档...", len(docs))
@@ -113,51 +125,68 @@ class RAGPipeline:
         )
         return answer, docs
 
+    # 同步 query 方法暂不支持 Rerank (因为 RerankService 是 async 的)
+    # 如果必须同步调用，需使用 asyncio.run 或降级为仅 Retrieve
     def query(self, question: str, **kwargs):
         """
-        同步入口
-        :param question: 必选，用于检索
-        :param kwargs: 可选，其他传递给 Prompt 的变量 (e.g. chat_history=[...])
+        同步入口 (Legacy: 暂不支持 Rerank，直接返回 Retrieve 结果)
         """
-        # 1. 检索 (依然主要依赖 question)
+        logger.warning("Synchronous query called. Reranking is skipped (Async required).")
         docs = self.retrieval_service.fetch(question)
-        
-        # 2. 组装输入
         inputs = {"question": question, **kwargs}
-        
-        return self._prepare_answer(inputs, docs)
+        # 使用 QAService 的同步 invoke
+        context = self._format_docs(docs)
+        inputs["context"] = context
+        answer = self.qa_service.invoke(inputs)
+        return answer, docs
 
-    async def async_query(self, question: str, **kwargs):
+    async def async_query(self, question: str, top_k: int = 3, **kwargs):
         """
-        异步入口
+        异步入口 (Standard: Recall -> Rerank -> Generate)
+        :param top_k: 最终保留给 LLM 的切片数量 (Precision K)
         """
-        # 1. 检索
-        docs = await self.retrieval_service.afetch(
+        # 1. Recall (检索 50 条)
+        # Retriever 已经在 build 时配置了 RECALL_TOP_K
+        recall_docs = await self.retrieval_service.afetch(
             question, 
             config={"callbacks": [self.langfuse_handler]}
         )
         
-        # 2. 组装输入
-        inputs = {"question": question, **kwargs}
+        # 2. Rerank (精排取 top_k)
+        reranked_docs = await self.rerank_service.rerank_documents(
+            query=question,
+            docs=recall_docs,
+            top_n=top_k
+        )
         
-        return await self._prepare_answer_async(inputs, docs)
+        # 3. Generate
+        inputs = {"question": question, **kwargs}
+        return await self._prepare_answer_async(inputs, reranked_docs)
 
-    async def astream_with_sources(self, query: str, **kwargs) -> AsyncGenerator[Union[List[Document], str], None]:
+    async def astream_with_sources(self, query: str, top_k: int = 3, **kwargs) -> AsyncGenerator[Union[List[Document], str], None]:
         """
-        流式生成：先 Yield 文档，再 Yield Token
+        流式生成 (支持 Rerank)
         """
-        # 1. 检索
-        docs = await self.retrieval_service.afetch(
+        # 1. Recall
+        recall_docs = await self.retrieval_service.afetch(
             query,
             config={"callbacks": [self.langfuse_handler]}
         )
-        yield docs
         
-        # 2. 组装输入 (支持 kwargs)
-        context = self._format_docs(docs)
+        # 2. Rerank
+        reranked_docs = await self.rerank_service.rerank_documents(
+            query=query,
+            docs=recall_docs,
+            top_n=top_k
+        )
+        
+        # Yield 精排后的文档
+        yield reranked_docs
+        
+        # 3. Generate
+        context = self._format_docs(reranked_docs)
         inputs = {"question": query, "context": context, **kwargs}
         
-        # 3. 生成
         async for token in self.generation_chain.astream(
             inputs,
             config={"callbacks": [self.langfuse_handler]}

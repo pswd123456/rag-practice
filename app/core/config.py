@@ -56,21 +56,26 @@ class Settings(BaseSettings):
     DATABASE_URL: str
 
     # retrieval
-    TOP_K: int
-    CHUNK_SIZE: int
-    CHUNK_OVERLAP: int
+    RECALL_TOP_K: int = 50
+    TOP_K: int = 3
+    CHUNK_SIZE: int = 500
+    CHUNK_OVERLAP: int = 50
 
     # evaluation
-    TESTSET_SIZE: int 
+    TESTSET_SIZE: int = 4
     
     # langfuse
     LANGFUSE_PUBLIC_KEY: str
     LANGFUSE_SECRET_KEY: str
     LANGFUSE_HOST: str 
     
+    # rerank service
+    RERANK_BASE_URL: str = "http://rerank-service:80" 
+    RERANK_MODEL_NAME: str = "BAAI/bge-reranker-v2-m3"
+
+    # log
     LOG_DIR: Path = PROJECT_ROOT / "logs"
 
-    
     @field_validator("DATABASE_URL", mode="before")
     @classmethod
     def assemble_async_db_url(cls, v: str | None) -> str:
