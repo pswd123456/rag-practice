@@ -20,9 +20,9 @@ from app.domain.models import (Knowledge,
                                Document,
                                DocStatus)
 
-from app.services import knowledge_crud
-from app.services.file_storage import save_upload_file
-from app.services.document_crud import delete_document_and_vectors
+from app.services.knowledge import knowledge_crud
+from app.services.minio.file_storage import save_upload_file
+from app.services.knowledge.document_crud import delete_document_and_vectors
 
 
 logger = logging.getLogger(__name__)

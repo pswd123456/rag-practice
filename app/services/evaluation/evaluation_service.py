@@ -19,12 +19,12 @@ from ragas.llms import LangchainLLMWrapper
 from app.core.config import settings
 from app.domain.models import Testset, Experiment, Document, Knowledge
 from app.services.factories import setup_embed_model, setup_llm
-from app.services.file_storage import save_bytes_to_minio, get_minio_client
+from app.services.minio.file_storage import save_bytes_to_minio, get_minio_client
 from app.services.loader import load_single_document
 from app.services.retrieval import VectorStoreManager
 from app.services.pipelines import RAGPipeline
 from app.services.generation import QAService
-from app.services.evaluation.runner import RAGEvaluator
+from app.services.evaluation.evaluation_runner import RAGEvaluator
 
 logger = logging.getLogger(__name__)
 

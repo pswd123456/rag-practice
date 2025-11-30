@@ -8,7 +8,7 @@ from fastapi import HTTPException
 from app.domain.models import (Knowledge, 
                                KnowledgeCreate, KnowledgeUpdate, 
                                Document, Experiment)
-from app.services.document_crud import delete_document_and_vectors
+from app.services.knowledge.document_crud import delete_document_and_vectors
 
 logger = logging.getLogger(__name__)
 

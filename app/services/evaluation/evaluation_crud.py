@@ -5,7 +5,7 @@ from fastapi import HTTPException
 import logging
 
 from app.domain.models import Testset, Experiment
-from app.services.file_storage import delete_file_from_minio
+from app.services.minio.file_storage import delete_file_from_minio
 
 logger = logging.getLogger(__name__)
 

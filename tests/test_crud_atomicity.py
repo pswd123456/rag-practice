@@ -1,7 +1,7 @@
 # tests/test_crud_atomicity.py
 import pytest
 from unittest.mock import MagicMock, patch
-from app.services import knowledge_crud
+from app.services.knowledge import knowledge_crud
 from app.domain.models import Knowledge, Document, KnowledgeStatus
 
 @pytest.mark.asyncio
@@ -16,7 +16,7 @@ async def test_delete_knowledge_removes_es_index(db_session, mock_es_client):
     await db_session.refresh(kb)
     
     # 2. Mock 依赖
-    with patch("app.services.document_crud.VectorStoreManager") as MockVSM:
+    with patch("app.services.knowledge.document_crud.VectorStoreManager") as MockVSM:
         mock_vsm_instance = MockVSM.return_value
         # 这里的返回值不重要，只要 verify 方法被调用即可
         mock_vsm_instance.delete_vectors.return_value = True

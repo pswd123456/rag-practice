@@ -17,7 +17,7 @@ from app.services.loader.docling_loader import load_and_chunk_docling_document
 from app.services.loader import load_single_document, split_docs
 from app.services.factories import setup_embed_model
 from app.services.retrieval.vector_store_manager import VectorStoreManager
-from app.services.file_storage import get_minio_client
+from app.services.minio.file_storage import get_minio_client
 
 logger = logging.getLogger(__name__)
 

@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 from langchain_core.documents import Document
 
 from app.services.pipelines.rag_pipeline import RAGPipeline
-from app.services.retrieval.service import RetrievalService
+from app.services.retrieval.retrieval_service import RetrievalService
 from app.services.generation.qa_service import QAService
 
 @pytest.mark.asyncio

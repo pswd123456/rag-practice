@@ -1,4 +1,4 @@
-from .loader import (
+from .basic_loader import (
 
     get_text_splitter,
     split_docs,

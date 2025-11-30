@@ -6,7 +6,7 @@ from sqlmodel import select
 
 # 🟢 [FIX] 移除 Chunk
 from app.domain.models import Document, Knowledge
-from app.services import document_crud
+from app.services.knowledge import document_crud
 
 @pytest.mark.asyncio
 async def test_delete_document_atomicity_failure(db_session):
@@ -31,7 +31,7 @@ async def test_delete_document_atomicity_failure(db_session):
     # 我们不再需要 Chunk 来验证原子性，只要 Document 还在就行
 
     # 2. 模拟 ES/VectorStore 删除失败抛出异常
-    with patch("app.services.document_crud.VectorStoreManager") as MockVSM:
+    with patch("app.services.knowledge.document_crud.VectorStoreManager") as MockVSM:
         mock_vsm_instance = MockVSM.return_value
         # 模拟抛出异常
         mock_vsm_instance.delete_by_doc_id.side_effect = ValueError("ES Connection Timeout")
@@ -73,7 +73,7 @@ async def test_delete_document_success(db_session, mock_minio):
     await db_session.commit()
     
     # 2. 正常删除
-    with patch("app.services.document_crud.VectorStoreManager") as MockVSM:
+    with patch("app.services.knowledge.document_crud.VectorStoreManager") as MockVSM:
         mock_vsm_instance = MockVSM.return_value
         # 模拟 ES 删除成功
         mock_vsm_instance.delete_by_doc_id.return_value = True

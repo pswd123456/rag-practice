@@ -5,7 +5,7 @@ from sqlmodel import select
 
 # 🟢 [FIX] 移除 Chunk
 from app.domain.models import Knowledge, Document, KnowledgeCreate, KnowledgeStatus
-from app.services import knowledge_crud
+from app.services.knowledge import knowledge_crud
 
 @pytest.mark.asyncio
 async def test_create_knowledge(db_session):
@@ -34,7 +34,7 @@ async def test_delete_knowledge_cascading(db_session, mock_minio):
     await db_session.commit()
     
     # 2. Mock VectorStoreManager (针对 ES)
-    with patch("app.services.document_crud.VectorStoreManager") as MockVSM:
+    with patch("app.services.knowledge.document_crud.VectorStoreManager") as MockVSM:
         mock_vsm_instance = MockVSM.return_value
         # 模拟 delete_by_doc_id 成功
         mock_vsm_instance.delete_by_doc_id.return_value = True

@@ -12,7 +12,7 @@ from langchain_core.runnables import RunnablePassthrough, RunnableLambda
 from langfuse.langchain import CallbackHandler # 🟢 引入 Handler
 
 from app.services.generation.qa_service import QAService
-from app.services.retrieval.service import RetrievalService
+from app.services.retrieval.retrieval_service import RetrievalService
 from app.services.retrieval.vector_store_manager import VectorStoreManager
 from app.services.factories.retrieval_factory import RetrievalFactory
 

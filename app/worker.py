@@ -1,16 +1,14 @@
 import os
-import asyncio
+
 import logging
 from typing import Any, List
-from arq import create_pool
 from arq.connections import RedisSettings
 
 from app.core.config import settings
 from app.db.session import async_session_maker # 🟢 引入异步工厂
 from app.core.logging_setup import setup_logging
-
-from app.services.ingest.processor import process_document_pipeline
-from app.services.knowledge_crud import delete_knowledge_pipeline 
+from app.services.ingest.ingest import process_document_pipeline
+from app.services.knowledge.knowledge_crud import delete_knowledge_pipeline 
 from app.services.evaluation.evaluation_service import generate_testset_pipeline, run_experiment_pipeline
 from app.db.session import engine
 # --- 1. 初始化 Worker 日志 ---

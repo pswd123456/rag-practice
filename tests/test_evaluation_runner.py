@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
-from app.services.evaluation.runner import RAGEvaluator
-from app.services.evaluation.config import EvaluationConfig
+from app.services.evaluation.evaluation_runner import RAGEvaluator
+from app.services.evaluation.evaluation_config import EvaluationConfig
 from app.services.pipelines.rag_pipeline import RAGPipeline
 
 # ==========================================
@@ -34,10 +34,10 @@ def test_ragas_metrics_loading(mock_pipeline, mock_llm_and_embed):
     config = EvaluationConfig(metrics=("faithfulness", "context_recall"))
     
     # 2. 初始化评估器 (Mock Ragas 类以避免真实初始化)
-    with patch("app.services.evaluation.runner.Faithfulness") as MockFaith, \
-         patch("app.services.evaluation.runner.ContextRecall") as MockRecall, \
-         patch("app.services.evaluation.runner.LangchainLLMWrapper"), \
-         patch("app.services.evaluation.runner.LangchainEmbeddingsWrapper"):
+    with patch("app.services.evaluation.evaluation_runner.Faithfulness") as MockFaith, \
+         patch("app.services.evaluation.evaluation_runner.ContextRecall") as MockRecall, \
+         patch("app.services.evaluation.evaluation_runner.LangchainLLMWrapper"), \
+         patch("app.services.evaluation.evaluation_runner.LangchainEmbeddingsWrapper"):
         
         evaluator = RAGEvaluator(mock_pipeline, llm, embed, config)
         
@@ -72,8 +72,8 @@ async def test_score_single_item_flow(mock_pipeline, mock_llm_and_embed):
 
     # 2. 初始化 Evaluator 并注入 Mock Metrics
     # 这里我们绕过 __init__ 中的 _build_metrics 逻辑，直接手动注入
-    with patch("app.services.evaluation.runner.LangchainLLMWrapper"), \
-         patch("app.services.evaluation.runner.LangchainEmbeddingsWrapper"):
+    with patch("app.services.evaluation.evaluation_runner.LangchainLLMWrapper"), \
+         patch("app.services.evaluation.evaluation_runner.LangchainEmbeddingsWrapper"):
          
         evaluator = RAGEvaluator(mock_pipeline, llm, embed)
         evaluator.metrics = [mock_metric_1, mock_metric_2]
@@ -111,8 +111,8 @@ async def test_score_single_item_exception_handling(mock_pipeline, mock_llm_and_
     bad_metric.name = "broken_metric"
     bad_metric.single_turn_ascore = AsyncMock(side_effect=ValueError("Calculation Error"))
     
-    with patch("app.services.evaluation.runner.LangchainLLMWrapper"), \
-         patch("app.services.evaluation.runner.LangchainEmbeddingsWrapper"):
+    with patch("app.services.evaluation.evaluation_runner.LangchainLLMWrapper"), \
+         patch("app.services.evaluation.evaluation_runner.LangchainEmbeddingsWrapper"):
          
         evaluator = RAGEvaluator(mock_pipeline, llm, embed)
         evaluator.metrics = [bad_metric]

@@ -22,7 +22,7 @@ from ragas.dataset_schema import SingleTurnSample
 
 # App Modules
 from app.services.pipelines import RAGPipeline
-from app.services.evaluation.config import EvaluationConfig, get_default_config
+from app.services.evaluation.evaluation_config import EvaluationConfig, get_default_config
 
 # 移除模块级别的 logging 配置代码
 # 只获取 logger 实例

@@ -6,7 +6,7 @@ from fastapi import HTTPException
 from app.domain.models import Document, Knowledge
 from app.services.retrieval import VectorStoreManager
 from app.services.factories import setup_embed_model
-from app.services.file_storage import delete_file_from_minio
+from app.services.minio.file_storage import delete_file_from_minio
 import logging
 
 logger = logging.getLogger(__name__)

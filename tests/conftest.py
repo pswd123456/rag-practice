@@ -13,7 +13,7 @@ from sqlmodel.pool import StaticPool
 from app.api import deps
 from app.main import app
 from app.core.config import settings
-from app.services.file_storage import get_minio_client
+from app.services.minio.file_storage import get_minio_client
 from app.services.retrieval.es_client import get_es_client
 
 # ==========================================
@@ -56,7 +56,7 @@ async def db_session_fixture() -> AsyncGenerator[AsyncSession, None]:
 def mock_minio():
     """全局 Mock MinIO 客户端"""
     get_minio_client.cache_clear()
-    with patch("app.services.file_storage.Minio") as mock:
+    with patch("app.services.minio.file_storage.Minio") as mock:
         client = mock.return_value
         client.bucket_exists.return_value = True
         yield client
