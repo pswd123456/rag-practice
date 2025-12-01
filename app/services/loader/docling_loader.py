@@ -126,11 +126,11 @@ class DoclingLoader:
             doc_content = conversion_result.document
             
             # Debug: 始终保存 Markdown 以便人工检查
-            try:
-                markdown_text = doc_content.export_to_markdown()
-                self._save_debug_files(doc_content, markdown_text)
-            except Exception:
-                pass
+            # try:
+            #     markdown_text = doc_content.export_to_markdown()
+            #     self._save_debug_files(doc_content, markdown_text)
+            # except Exception:
+            #     pass
 
             final_docs = []
 

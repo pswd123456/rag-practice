@@ -50,6 +50,7 @@ datasets
 # --- Frontend ---
 streamlit
 watchfiles
+matplotlib
 
 # --- Utilities ---
 pydantic

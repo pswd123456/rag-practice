@@ -45,7 +45,7 @@ ENV UV_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --system -r requirements.txt
 
-COPY models /app/models
+# COPY models /app/models
 # -----------------------------------------------------------------
 # 3. 源码层
 # -----------------------------------------------------------------
