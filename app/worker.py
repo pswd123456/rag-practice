@@ -9,6 +9,7 @@ from app.db.session import async_session_maker, engine
 from app.core.logging_setup import setup_logging
 
 # Services
+# [Modified] 引入新的 pipeline
 from app.services.ingest.ingest import process_document_pipeline
 from app.services.knowledge.knowledge_crud import delete_knowledge_pipeline 
 from app.services.evaluation.evaluation_service import generate_testset_pipeline, run_experiment_pipeline
@@ -92,11 +93,12 @@ async def shutdown(ctx: Any):
 
 async def process_document_task(ctx: Any, doc_id: int):
     logger.info(f"[Task] 开始处理文档: ID {doc_id}")
-    async with async_session_maker() as db:
-        try:
-            await process_document_pipeline(db, doc_id)
-        except Exception as e:
-            logger.error(f"[Task] 文档处理异常 (ID {doc_id}): {e}", exc_info=True)
+    # [Optimization] 移除外部的 Session Context
+    # 数据库连接现在由 pipeline 内部按需获取，防止 Docling 等长任务占用连接池
+    try:
+        await process_document_pipeline(doc_id)
+    except Exception as e:
+        logger.error(f"[Task] 文档处理异常 (ID {doc_id}): {e}", exc_info=True)
 
 # 增加超时时间
 process_document_task.max_tries = 3 # type: ignore
