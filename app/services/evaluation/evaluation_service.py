@@ -4,7 +4,7 @@ import nest_asyncio
 import tempfile
 import pandas as pd
 from pathlib import Path
-from typing import List
+from typing import List, Dict, Any
 
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -20,7 +20,11 @@ from app.core.config import settings
 from app.domain.models import Testset, Experiment, Document, Knowledge
 from app.services.factories import setup_embed_model, setup_llm
 from app.services.minio.file_storage import save_bytes_to_minio, get_minio_client
-from app.services.loader import load_single_document
+
+# [Modified] 引入与 Ingest 管道一致的加载器
+from app.services.loader.docling_loader import load_and_chunk_docling_document
+from app.services.loader import load_single_document, split_docs
+
 from app.services.retrieval import VectorStoreManager
 from app.services.pipelines import RAGPipeline
 from app.services.generation import QAService
@@ -28,7 +32,6 @@ from app.services.evaluation.evaluation_runner import RAGEvaluator
 
 logger = logging.getLogger(__name__)
 
-# 应用 nest_asyncio 防止事件循环冲突 (Ragas 内部可能用到 asyncio.run)
 nest_asyncio.apply()
 
 # ==========================================
@@ -38,8 +41,8 @@ nest_asyncio.apply()
 async def generate_testset_pipeline(db: AsyncSession, testset_id: int, source_doc_ids: List[int], generator_model: str = "qwen-max"):
     """
     根据指定的源文档生成测试集 (异步版)
+    [Consistency Fix]: 确保使用与 Ingestion 阶段完全一致的加载与切片策略 (Docling + HybridChunker)
     """
-    # 1. 获取 Testset
     testset = await db.get(Testset, testset_id)
     if not testset:
         logger.error(f"Testset {testset_id} not found")
@@ -51,44 +54,80 @@ async def generate_testset_pipeline(db: AsyncSession, testset_id: int, source_do
         db.add(testset)
         await db.commit()
         
-        # 2. 加载源文档 (涉及 MinIO 和 文件加载，放入 Thread)
-        # 优化：先在异步上下文中查出所有 Document 的 path
-        doc_paths = []
+        # 2. 预加载文档信息 (含 Knowledge 配置)
+        # [Fix] 我们需要获取 chunk_size，以便 Docling 切片与入库时一致
+        doc_infos = []
         for doc_id in source_doc_ids:
-            db_doc = await db.get(Document, doc_id)
+            # 显式加载 knowledge_base 关系
+            stmt = select(Document).where(Document.id == doc_id).options(selectinload(Document.knowledge_base))
+            result = await db.exec(stmt)
+            db_doc = result.first()
+            
             if db_doc:
-                doc_paths.append((db_doc.filename, db_doc.file_path))
+                kb = db_doc.knowledge_base
+                # 默认值防守
+                c_size = kb.chunk_size if kb else settings.CHUNK_SIZE
+                c_overlap = kb.chunk_overlap if kb else settings.CHUNK_OVERLAP
+                
+                doc_infos.append({
+                    "filename": db_doc.filename,
+                    "file_path": db_doc.file_path,
+                    "chunk_size": c_size,
+                    "chunk_overlap": c_overlap
+                })
         
-        if not doc_paths:
+        if not doc_infos:
             raise ValueError("未找到有效文档记录")
 
-        # 定义阻塞的加载函数
-        def _blocking_load():
+        # 定义阻塞的加载函数 (Update)
+        def _blocking_load(infos: List[Dict[str, Any]]):
             loaded_docs = []
             minio_client = get_minio_client()
-            for filename, file_path in doc_paths:
-                suffix = Path(filename).suffix
+            
+            for info in infos:
+                filename = info["filename"]
+                file_path = info["file_path"]
+                chunk_size = info["chunk_size"]
+                chunk_overlap = info["chunk_overlap"]
+                
+                suffix = Path(filename).suffix.lower()
+                
+                # 创建临时文件
                 with tempfile.NamedTemporaryFile(delete=True, suffix=suffix) as tmp:
-                    
+                    # 下载
                     minio_client.fget_object(
                         bucket_name=settings.MINIO_BUCKET_NAME, 
                         object_name=file_path, 
                         file_path=tmp.name
                     )
-                    # 复用 loader
-                    loaded = load_single_document(tmp.name)
-                    loaded_docs.extend(loaded)
+                    
+                    # [Critical Fix] 分支处理：保持与 Ingest Pipeline 一致
+                    if suffix in [".pdf", ".docx", ".doc"]:
+                        logger.info(f"Testset Generation: 使用 Docling 处理 {filename} (Size={chunk_size})")
+                        # 使用 Docling HybridChunker
+                        docs = load_and_chunk_docling_document(tmp.name, chunk_size=chunk_size)
+                        loaded_docs.extend(docs)
+                    else:
+                        logger.info(f"Testset Generation: 使用 BasicLoader 处理 {filename}")
+                        # 使用标准加载 + RecursiveSplitter
+                        raw_docs = load_single_document(tmp.name)
+                        splitted = split_docs(raw_docs, chunk_size, chunk_overlap)
+                        loaded_docs.extend(splitted)
+                        
             return loaded_docs
 
-        langchain_docs = await asyncio.to_thread(_blocking_load)
+        # 在线程中执行加载
+        langchain_docs = await asyncio.to_thread(_blocking_load, doc_infos)
         
         if not langchain_docs:
             raise ValueError("没有加载到任何有效文档内容")
+        
+        logger.info(f"文档加载完成，共 {len(langchain_docs)} 个切片。开始生成 QA 对...")
 
-        # 3. 执行生成 (Ragas Generator 是重 CPU/IO 操作，且内部可能有 EventLoop，使用 to_thread)
+        # 3. 执行生成 (Ragas Generator)
         def _generation_task():
-            # 初始化 Generator
             generator_llm = setup_llm(generator_model) 
+            # 使用更强的 Embedding 模型以提高 Testset 质量 (Evaluation 通常不惜成本)
             generator_embed = setup_embed_model("text-embedding-v4")
             
             generator = TestsetGenerator(
@@ -96,12 +135,13 @@ async def generate_testset_pipeline(db: AsyncSession, testset_id: int, source_do
                 embedding_model=LangchainEmbeddingsWrapper(generator_embed)
             )
             
+            # generate_with_langchain_docs 会使用传入的 chunks (Nodes) 生成问题
+            # 因为我们传入的是 Docling 切好的 chunks，所以生成的 Context 也是基于 Docling 的
             return generator.generate_with_langchain_docs(
                 langchain_docs, 
                 testset_size=settings.TESTSET_SIZE
             )
 
-        logger.info("正在调用 Ragas 生成测试集 (这可能需要较长时间)...")
         dataset = await asyncio.to_thread(_generation_task)
         
         # 4. 转 CSV 并保存到 MinIO (Thread)
@@ -111,34 +151,36 @@ async def generate_testset_pipeline(db: AsyncSession, testset_id: int, source_do
             json_bytes = json_str.encode('utf-8')
             
             file_path = f"testsets/{testset_id}_{testset.name}.jsonl"
-            # save_bytes_to_minio 内部已经封装了 kwargs 调用
             save_bytes_to_minio(json_bytes, file_path, "application/json")
             
-            # 同步到 Langfuse (可选，网络IO)
-            langfuse = Langfuse()
-            lf_dataset_name = f"testset_{testset_id}_{testset.name}"
-            langfuse.create_dataset(
-                name=lf_dataset_name,
-                description=f"Auto-generated from docs: {source_doc_ids}. Model: {generator_model}",
-                metadata={"testset_id": testset_id, "source": "rag-practice"}
-            )
-            for _, row in df.iterrows():
-                langfuse.create_dataset_item(
-                    dataset_name=lf_dataset_name,
-                    input=row["user_input"],
-                    expected_output=row["reference"],
-                    metadata={"source_context": row.get("reference_contexts")}
+            # 同步到 Langfuse
+            try:
+                langfuse = Langfuse()
+                lf_dataset_name = f"testset_{testset_id}_{testset.name}"
+                langfuse.create_dataset(
+                    name=lf_dataset_name,
+                    description=f"Docs: {source_doc_ids}. Model: {generator_model}. (Docling/Aligned)",
+                    metadata={"testset_id": testset_id, "source": "rag-practice"}
                 )
+                for _, row in df.iterrows():
+                    langfuse.create_dataset_item(
+                        dataset_name=lf_dataset_name,
+                        input=row["user_input"],
+                        expected_output=row["reference"],
+                        metadata={"source_context": row.get("reference_contexts")}
+                    )
+            except Exception as e:
+                logger.warning(f"Langfuse dataset upload failed: {e}")
+
             return file_path, len(df)
 
         saved_path, count = await asyncio.to_thread(_save_task)
 
         # 5. 更新 DB
-        # 重新获取对象以防过期
         testset = await db.get(Testset, testset_id)
         if testset:
             testset.file_path = saved_path
-            testset.description = f"Generated by {generator_model}. Size: {count}"
+            testset.description = f"Generated by {generator_model} (Docling Enabled). Size: {count}"
             testset.status = "COMPLETED"
             testset.error_message = None
             db.add(testset)
@@ -157,15 +199,9 @@ async def generate_testset_pipeline(db: AsyncSession, testset_id: int, source_do
             await db.commit()
         raise e
 
-# ==========================================
-# 2. 运行实验 (Run Experiment)
-# ==========================================
-
+# ... (Run Experiment 部分保持不变) ...
 async def run_experiment_pipeline(db: AsyncSession, experiment_id: int):
-    """
-    执行 RAG 评测实验 (异步版)
-    """
-    # 1. 预加载 Knowledge 和 Testset
+    # 复用之前的逻辑，未修改部分省略以节省篇幅，但请保留原文件中的完整代码
     stmt = select(Experiment).where(Experiment.id == experiment_id).options(
         selectinload(Experiment.knowledge),
         selectinload(Experiment.testset)
