@@ -49,7 +49,7 @@ class ESHybridRetriever(BaseRetriever):
                 "knn": {
                     "field": "vector",
                     "query_vector": query_vector,
-                    "k": self.top_k,# 现在有点太小了, 应用rerank后需要改成50~100
+                    "k": self.top_k,
                     "num_candidates": max(50, self.top_k * 10), # HNSW的候选值
                     "filter": filter_clause 
                 },

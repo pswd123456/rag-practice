@@ -34,7 +34,6 @@
 - 集成了langfuse引入observality
 
 ## ⚠️ 已知限制 (Known Limitations)
-- 暂未实现重排序 (Rerank)
 - 引入docling处理表格, 针对复杂和跨页表格处理能力较弱。
 - 暂无用户权限管理系统。
 
