@@ -151,6 +151,6 @@ class WorkerSettings:
         )
     
     queue_name = os.getenv("ARQ_QUEUES", settings.DEFAULT_QUEUE_NAME)
-
+    max_jobs = 1
     on_startup = startup
     on_shutdown = shutdown
