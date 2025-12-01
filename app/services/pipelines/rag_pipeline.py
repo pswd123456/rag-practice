@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 RAG 管道模块 (pipeline.py)
 
@@ -9,7 +8,7 @@ from typing import AsyncGenerator, List, Optional, Union, Dict, Any
 
 from langchain_core.documents import Document
 from langchain_core.runnables import RunnablePassthrough, RunnableLambda
-from langfuse.langchain import CallbackHandler # 🟢 引入 Handler
+from langfuse.langchain import CallbackHandler 
 
 from app.services.generation.qa_service import QAService
 from app.services.retrieval.retrieval_service import RetrievalService
@@ -91,23 +90,23 @@ class RAGPipeline:
 
         return "\n\n".join(doc.page_content for doc in docs)
 
-    def _prepare_answer(self, inputs: Dict[str, Any], docs: List[Document]):
-        """
-        同步生成答案
-        :param inputs: 包含用户问题和其他变量的字典
-        :param docs: 检索到的文档列表
-        """
-        # 1. 格式化上下文
-        context = self._format_docs(docs)
+    # def _prepare_answer(self, inputs: Dict[str, Any], docs: List[Document]):
+    #     """
+    #     同步生成答案(Deprecated)
+    #     :param inputs: 包含用户问题和其他变量的字典
+    #     :param docs: 检索到的文档列表
+    #     """
+    #     # 1. 格式化上下文
+    #     context = self._format_docs(docs)
         
-        # 2. 注入上下文变量
-        # 这里的 copy 是为了避免副作用修改传入的字典
-        final_inputs = inputs.copy()
-        final_inputs["context"] = context
+    #     # 2. 注入上下文变量
+    #     # 这里的 copy 是为了避免副作用修改传入的字典
+    #     final_inputs = inputs.copy()
+    #     final_inputs["context"] = context
         
-        # 3. 调用 GenerationNode
-        answer = self.qa_service.invoke(final_inputs)
-        return answer, docs
+    #     # 3. 调用 GenerationNode
+    #     answer = self.qa_service.invoke(final_inputs)
+    #     return answer, docs
 
     async def _prepare_answer_async(self, inputs: Dict[str, Any], docs: List[Document]):
         """
@@ -125,20 +124,17 @@ class RAGPipeline:
         )
         return answer, docs
 
-    # 同步 query 方法暂不支持 Rerank (因为 RerankService 是 async 的)
-    # 如果必须同步调用，需使用 asyncio.run 或降级为仅 Retrieve
-    def query(self, question: str, **kwargs):
-        """
-        同步入口 (Legacy: 暂不支持 Rerank，直接返回 Retrieve 结果)
-        """
-        logger.warning("Synchronous query called. Reranking is skipped (Async required).")
-        docs = self.retrieval_service.fetch(question)
-        inputs = {"question": question, **kwargs}
-        # 使用 QAService 的同步 invoke
-        context = self._format_docs(docs)
-        inputs["context"] = context
-        answer = self.qa_service.invoke(inputs)
-        return answer, docs
+    # def query(self, question: str, **kwargs):
+    #     """
+    #     同步入口 (Deprecated)
+    #     """
+    #     logger.warning("Synchronous query called. Reranking is skipped (Async required).")
+    #     docs = self.retrieval_service.fetch(question)
+    #     inputs = {"question": question, **kwargs}
+    #     context = self._format_docs(docs)
+    #     inputs["context"] = context
+    #     answer = self.qa_service.invoke(inputs)
+    #     return answer, docs
 
     async def async_query(self, question: str, top_k: int = 3, **kwargs):
         """

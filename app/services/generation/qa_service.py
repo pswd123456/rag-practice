@@ -25,7 +25,7 @@ class QAService:
         self.langfuse_prompt_obj = None
         
         try:
-            # 1. 从 Langfuse 云端获取 Prompt
+            #从 Langfuse 云端获取 Prompt
             logger.info(f"正在从 Langfuse 加载 Prompt: {prompt_name}...")
             self.langfuse_prompt_obj = self.langfuse.get_prompt(prompt_name)
             self.template = self.langfuse_prompt_obj.get_langchain_prompt()
@@ -33,7 +33,7 @@ class QAService:
             
         except Exception as e:
             logger.error(f"❌ Langfuse Prompt 加载失败，回退到本地默认 Prompt: {e}", exc_info=True)
-            # Fallback
+            
             self.template = """
             你是一个智能助手。请基于以下上下文回答用户问题。
             
@@ -57,13 +57,13 @@ class QAService:
         
         logger.debug("QAService (GenerationNode) 构建完成。")
 
-    def invoke(self, input_dict: Dict[str, Any], config: Optional[RunnableConfig] = None) -> str:
-        """
-        同步调用生成
-        :param input_dict: 包含 Prompt 所需变量的字典 (e.g. {"question": "...", "context": "..."})
-        """
-        config = self._inject_prompt_metadata(config)
-        return self.chain.invoke(input_dict, config=config)
+    # def invoke(self, input_dict: Dict[str, Any], config: Optional[RunnableConfig] = None) -> str:
+    #     """
+    #     同步调用生成(Deprecated)
+    #     :param input_dict: 包含 Prompt 所需变量的字典 (e.g. {"question": "...", "context": "..."})
+    #     """
+    #     config = self._inject_prompt_metadata(config)
+    #     return self.chain.invoke(input_dict, config=config)
 
     async def ainvoke(self, input_dict: Dict[str, Any], config: Optional[RunnableConfig] = None) -> str:
         """
