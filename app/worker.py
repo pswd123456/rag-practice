@@ -1,22 +1,88 @@
 import os
-
 import logging
 from typing import Any, List
 from arq.connections import RedisSettings
+from sqlmodel import select
 
 from app.core.config import settings
-from app.db.session import async_session_maker # 🟢 引入异步工厂
+from app.db.session import async_session_maker, engine
 from app.core.logging_setup import setup_logging
+
+# Services
 from app.services.ingest.ingest import process_document_pipeline
 from app.services.knowledge.knowledge_crud import delete_knowledge_pipeline 
 from app.services.evaluation.evaluation_service import generate_testset_pipeline, run_experiment_pipeline
-from app.db.session import engine
+
+# Models for State Checking
+from app.domain.models import Document, DocStatus, Testset, Experiment, Knowledge, KnowledgeStatus
+
 # --- 1. 初始化 Worker 日志 ---
 setup_logging(str(settings.LOG_FILE_PATH), log_level="INFO")
 logger = logging.getLogger("app.worker")
 
+async def check_and_fix_zombie_tasks():
+    """
+    [Self-Healing] 检查并修复因 Worker 崩溃或重启而残留的 '僵尸任务'。
+    将所有处于中间状态的任务标记为 FAILED。
+    """
+    logger.info("🚑 正在检查僵尸任务 (Zombie Tasks)...")
+    
+    async with async_session_maker() as db:
+        try:
+            # 1. 修复 Documents (PROCESSING -> FAILED)
+            stmt_doc = select(Document).where(Document.status == DocStatus.PROCESSING)
+            docs = (await db.exec(stmt_doc)).all()
+            if docs:
+                logger.warning(f"发现 {len(docs)} 个卡在 PROCESSING 状态的文档，正在重置...")
+                for doc in docs:
+                    doc.status = DocStatus.FAILED
+                    doc.error_message = "任务异常中断: 服务可能发生了重启或崩溃。"
+                    db.add(doc)
+            
+            # 2. 修复 Testsets (GENERATING -> FAILED)
+            stmt_ts = select(Testset).where(Testset.status == "GENERATING")
+            testsets = (await db.exec(stmt_ts)).all()
+            if testsets:
+                logger.warning(f"发现 {len(testsets)} 个卡在 GENERATING 状态的测试集，正在重置...")
+                for ts in testsets:
+                    ts.status = "FAILED"
+                    ts.error_message = "任务异常中断: 服务可能发生了重启或崩溃。"
+                    db.add(ts)
+
+            # 3. 修复 Experiments (RUNNING -> FAILED)
+            stmt_exp = select(Experiment).where(Experiment.status == "RUNNING")
+            exps = (await db.exec(stmt_exp)).all()
+            if exps:
+                logger.warning(f"发现 {len(exps)} 个卡在 RUNNING 状态的实验，正在重置...")
+                for exp in exps:
+                    exp.status = "FAILED"
+                    exp.error_message = "任务异常中断: 服务可能发生了重启或崩溃。"
+                    db.add(exp)
+            
+            # 4. 修复 Knowledge Deletions (DELETING -> FAILED)
+            stmt_kb = select(Knowledge).where(Knowledge.status == KnowledgeStatus.DELETING)
+            kbs = (await db.exec(stmt_kb)).all()
+            if kbs:
+                logger.warning(f"发现 {len(kbs)} 个卡在 DELETING 状态的知识库，正在标记为 FAILED...")
+                for kb in kbs:
+                    kb.status = KnowledgeStatus.FAILED
+                    # Knowledge 模型没有 error_message 字段，只能通过状态传达
+                    db.add(kb)
+
+            await db.commit()
+            if docs or testsets or exps or kbs:
+                logger.info("✅ 僵尸任务修复完成。")
+            else:
+                logger.info("✨ 未发现僵尸任务，系统状态健康。")
+                
+        except Exception as e:
+            logger.error(f"执行僵尸任务修复时发生错误: {e}", exc_info=True)
+            await db.rollback()
+
 async def startup(ctx: Any):
     logger.info("👷 Worker 进程启动...")
+    # 执行自愈逻辑
+    await check_and_fix_zombie_tasks()
 
 async def shutdown(ctx: Any):
     logger.info("👷 Worker 进程关闭...")

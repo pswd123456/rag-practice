@@ -7,8 +7,9 @@ if TYPE_CHECKING:
     from .experiment import Experiment
 
 class KnowledgeStatus(str, Enum):
-    NORMAL = "NORMAL",
+    NORMAL = "NORMAL"
     DELETING = "DELETING"
+    FAILED = "FAILED"  # [新增] 支持标记删除/创建失败
 
 # 1. 基础 Schema (用于 Pydantic 验证和继承)
 class KnowledgeBaseBase(SQLModel):
@@ -30,14 +31,14 @@ class Knowledge(KnowledgeBaseBase, table=True):
     
     experiments: List["Experiment"] = Relationship(back_populates="knowledge")
 
-# 3. API 交互用的 Schema (保持你原有的结构，稍微扩展)
+# 3. API 交互用的 Schema
 class KnowledgeCreate(KnowledgeBaseBase):
     pass
 
 class KnowledgeRead(KnowledgeBaseBase):
     id: int
-    # 可以在读取知识库详情时，顺便返回包含的文档数，但暂不返回具体文档列表，以免太重
     status: KnowledgeStatus
+
 class KnowledgeUpdate(KnowledgeBaseBase):
     name: Optional[str] = None
     description: Optional[str] = None
