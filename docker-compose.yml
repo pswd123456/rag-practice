@@ -54,7 +54,7 @@ services:
     environment:
       - discovery.type=single-node
       - xpack.security.enabled=false    # 开发环境关闭安全验证，生产环境建议开启
-      - "ES_JAVA_OPTS=-Xms512m -Xmx512m" # 限制内存，防止打爆开发机
+      - "ES_JAVA_OPTS=-Xms512m -Xmx1g" # 限制内存，防止打爆开发机
       - TZ=Asia/Shanghai
     volumes:
       - es_data:/usr/share/elasticsearch/data
@@ -67,6 +67,11 @@ services:
       interval: 10s
       timeout: 10s
       retries: 10
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'    # 限制最多使用 2 个核
+          memory: 1G     # 限制容器内存 (配合 ES_JAVA_OPTS 使用)
 
   # Kibana (ES 可视化管理)
   kibana:
@@ -234,6 +239,9 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
+        limits:
+          cpus: '4.0'    # 限制 OCR 任务最多吃掉 4 个核
+          memory: 4G
 
   # ----------------------------------------------------------------
   # Rerank 服务 (TEI)
@@ -258,7 +266,9 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
-
+      limits:
+          cpus: '2.0'
+          memory: 4G
 
   # ----------------------------------------------------------------
   # 3. 可观测性服务 (Langfuse) 

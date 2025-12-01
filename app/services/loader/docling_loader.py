@@ -56,7 +56,7 @@ class DoclingLoader:
         else:
             logger.warning("⚠️ 未检测到 CUDA，Docling 将使用 CPU 运行 (速度较慢)")
             pipeline_options.accelerator_options = AcceleratorOptions(
-                num_threads=8, 
+                num_threads=4, 
                 device=AcceleratorDevice.CPU
             )
 
