@@ -1,9 +1,10 @@
+# app/api/routes/evaluation.py
+
 from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import select, desc
-from sqlmodel.ext.asyncio.session import AsyncSession # 🟢 引入 AsyncSession
-from arq import create_pool
-from arq.connections import RedisSettings
+from sqlmodel.ext.asyncio.session import AsyncSession
+from arq import ArqRedis 
 
 from app.api import deps
 from app.core.config import settings
@@ -34,12 +35,12 @@ class ExperimentCreateRequest(BaseModel):
 @router.post("/testsets", response_model=int)
 async def create_generation_task(
     req: TestsetCreateRequest,
-    db: AsyncSession = Depends(deps.get_db_session)
+    db: AsyncSession = Depends(deps.get_db_session),
+    redis: ArqRedis = Depends(deps.get_redis_pool), # 🟢 注入 Redis
 ):
     """
     提交一个测试集生成任务
     """
-    # 1. 创建数据库记录
     testset = Testset(
         name=req.name,
         file_path="", 
@@ -47,18 +48,15 @@ async def create_generation_task(
         status="GENERATING"
     )
     db.add(testset)
-    await db.commit() # 🟢 await
-    await db.refresh(testset) # 🟢 await
+    await db.commit()
+    await db.refresh(testset)
 
-    # 2. 推送任务到 Redis
     try:
-        redis = await create_pool(RedisSettings(host=settings.REDIS_HOST, port=settings.REDIS_PORT))
+        # 🟢 优化：复用连接池
         await redis.enqueue_job("generate_testset_task", testset.id, req.source_doc_ids, req.generator_llm)
-        await redis.close()
     except Exception as e:
-        # 回滚
-        await db.delete(testset) # ⚠️ db.delete 是同步方法，但 safe to call here? yes, it's state tracking
-        await db.commit() # 🟢 await
+        await db.delete(testset)
+        await db.commit()
         raise HTTPException(status_code=500, detail=f"任务入队失败: {str(e)}")
 
     return testset.id
@@ -94,18 +92,17 @@ async def delete_testset_endpoint(
 @router.post("/experiments", response_model=int)
 async def create_experiment_task(
     req: ExperimentCreateRequest,
-    db: AsyncSession = Depends(deps.get_db_session)
+    db: AsyncSession = Depends(deps.get_db_session),
+    redis: ArqRedis = Depends(deps.get_redis_pool), # 🟢 注入 Redis
 ):
     """
     提交一个评测实验任务
     """
-    # 校验 KB 和 Testset 是否存在 (🟢 await)
     kb = await db.get(Knowledge, req.knowledge_id)
     ts = await db.get(Testset, req.testset_id)
     if not kb or not ts:
         raise HTTPException(status_code=404, detail="Knowledge or Testset not found")
 
-    # 1. 创建实验记录
     exp = Experiment(
         knowledge_id=req.knowledge_id,
         testset_id=req.testset_id,
@@ -113,19 +110,17 @@ async def create_experiment_task(
         status="PENDING"
     )
     db.add(exp)
-    await db.commit() # 🟢 await
-    await db.refresh(exp) # 🟢 await
+    await db.commit()
+    await db.refresh(exp)
 
-    # 2. 推送任务
     try:
-        redis = await create_pool(RedisSettings(host=settings.REDIS_HOST, port=settings.REDIS_PORT))
+        # 🟢 优化：复用连接池
         await redis.enqueue_job("run_experiment_task", exp.id)
-        await redis.close()
     except Exception as e:
         exp.status = "FAILED"
         exp.error_message = str(e)
         db.add(exp)
-        await db.commit() # 🟢 await
+        await db.commit()
         raise HTTPException(status_code=500, detail=f"任务入队失败: {str(e)}")
 
     return exp.id

@@ -1,3 +1,4 @@
+# tests/test_worker_routing.py
 import pytest
 from unittest.mock import MagicMock, patch
 from fastapi import UploadFile
@@ -34,7 +35,6 @@ async def test_docling_queue_routing(db_session, mock_redis):
     await db_session.commit()
     
     # 2. 模拟上传 PDF 文件
-    # 这里的 file-like object 只需要有 filename 属性即可触发路由逻辑
     mock_file = MagicMock(spec=UploadFile)
     mock_file.filename = "complex_table.pdf"
     mock_file.file = MagicMock() # 模拟 file.file
@@ -45,8 +45,13 @@ async def test_docling_queue_routing(db_session, mock_redis):
         mock_save.return_value = "1/complex_table.pdf"
         
         # 3. 调用 API 路由处理函数
-        # 注意：mock_redis fixture 已经在 conftest.py 中自动生效并拦截了 create_pool
-        await upload_file(knowledge_id=kb.id, file=mock_file, db=db_session)
+        # 🟢 [FIX] 显式传入 redis 参数 (注入 mock 对象)
+        await upload_file(
+            knowledge_id=kb.id, 
+            file=mock_file, 
+            db=db_session,
+            redis=mock_redis 
+        )
         
         # 4. 验证路由逻辑
         # 检查 enqueue_job 是否被调用
@@ -60,7 +65,7 @@ async def test_docling_queue_routing(db_session, mock_redis):
         # 断言任务名称
         assert job_name == "process_document_task"
         
-        # 🟢 [关键] 断言队列名称为 Docling Queue
+        # 断言队列名称为 Docling Queue
         assert kwargs.get("_queue_name") == settings.DOCLING_QUEUE_NAME
         print(f"✅ PDF Routing Verified: Queue -> {kwargs.get('_queue_name')}")
 
@@ -84,13 +89,19 @@ async def test_default_queue_routing(db_session, mock_redis):
         mock_save.return_value = "2/notes.txt"
         
         # 3. 调用 API
-        await upload_file(knowledge_id=kb.id, file=mock_file, db=db_session)
+        # 🟢 [FIX] 显式传入 redis 参数
+        await upload_file(
+            knowledge_id=kb.id, 
+            file=mock_file, 
+            db=db_session,
+            redis=mock_redis
+        )
         
         # 4. 验证路由逻辑
         call_args = mock_redis.enqueue_job.call_args
         kwargs = call_args[1]
         
-        # 🟢 [关键] 断言队列名称为默认队列
+        # 断言队列名称为默认队列
         assert kwargs.get("_queue_name") == settings.DEFAULT_QUEUE_NAME
         print(f"✅ TXT Routing Verified: Queue -> {kwargs.get('_queue_name')}")
 
@@ -111,10 +122,15 @@ async def test_task_payload_integrity(db_session, mock_redis):
         mock_save.return_value = "path/to/test.md"
         
         # 调用 API
-        await upload_file(knowledge_id=kb.id, file=mock_file, db=db_session)
+        # 🟢 [FIX] 显式传入 redis 参数
+        await upload_file(
+            knowledge_id=kb.id, 
+            file=mock_file, 
+            db=db_session, 
+            redis=mock_redis
+        )
         
         # 获取 enqueue_job 传递的参数
-        # call_args[0] 是位置参数元组: (job_name, doc_id, ...)
         call_args = mock_redis.enqueue_job.call_args
         passed_doc_id = call_args[0][1]
         

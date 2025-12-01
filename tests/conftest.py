@@ -1,7 +1,7 @@
 import pytest
 import pytest_asyncio
 from typing import AsyncGenerator, List
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, AsyncMock
 from httpx import AsyncClient, ASGITransport
 from elasticsearch import Elasticsearch
 
@@ -51,7 +51,6 @@ async def db_session_fixture() -> AsyncGenerator[AsyncSession, None]:
 # ==========================================
 # 2. Service Mocks
 # ==========================================
-
 @pytest.fixture(autouse=True)
 def mock_minio():
     """全局 Mock MinIO 客户端"""
@@ -63,22 +62,25 @@ def mock_minio():
 
 @pytest.fixture(autouse=True)
 def mock_redis():
-    """全局 Mock Redis/Arq"""
-    with patch("app.api.routes.knowledge.create_pool") as mock_pool_knowledge, \
-         patch("app.api.routes.evaluation.create_pool") as mock_pool_eval, \
-         patch("app.api.routes.evaluation.RedisSettings"), \
-         patch("app.api.routes.knowledge.RedisSettings"):
-        
-        mock_redis_instance = MagicMock()
-        mock_redis_instance.enqueue_job = AsyncMock(return_value="job_id_123")
-        mock_redis_instance.close = AsyncMock()
-        
-        async def return_mock(*args, **kwargs):
-            return mock_redis_instance
-            
-        mock_pool_knowledge.side_effect = return_mock
-        mock_pool_eval.side_effect = return_mock
-        yield mock_redis_instance
+    """
+    全局 Mock Redis/Arq。
+    [Refactor]: 现在的策略是通过 dependency_overrides 覆盖 get_redis_pool。
+    """
+    mock_redis_instance = MagicMock()
+    mock_redis_instance.enqueue_job = AsyncMock(return_value="job_id_123")
+    mock_redis_instance.close = AsyncMock()
+    
+    # 模拟 ArqRedis 实例
+    async def override_get_redis_pool():
+        return mock_redis_instance
+
+    # 覆盖依赖
+    app.dependency_overrides[deps.get_redis_pool] = override_get_redis_pool
+    
+    yield mock_redis_instance
+    
+    # 清理
+    app.dependency_overrides.pop(deps.get_redis_pool, None)
 
 # ==========================================
 # 3. Embedding & LLM Mocks (关键修复)

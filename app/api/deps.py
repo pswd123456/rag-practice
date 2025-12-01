@@ -1,9 +1,11 @@
 # app/api/deps.py
+
 import asyncio
 import logging
 from typing import AsyncGenerator, Optional
-from fastapi import Depends
+from fastapi import Depends, Request
 from sqlmodel.ext.asyncio.session import AsyncSession
+from arq import ArqRedis
 
 from app.core.config import settings
 from app.db.session import get_session
@@ -12,7 +14,6 @@ from app.services.factories import setup_embed_model, setup_llm
 from app.services.generation import QAService
 from app.services.pipelines import RAGPipeline
 from app.services.retrieval import VectorStoreManager
-# [New]
 from app.services.rerank.rerank_service import RerankService
 
 logger = logging.getLogger(__name__)
@@ -20,6 +21,14 @@ logger = logging.getLogger(__name__)
 async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
     async for session in get_session():
         yield session
+
+async def get_redis_pool(request: Request) -> ArqRedis:
+    """
+    从 app.state 获取全局复用的 Redis 连接池。
+    """
+    if not hasattr(request.app.state, "redis_pool"):
+        raise RuntimeError("Redis pool not initialized in app state")
+    return request.app.state.redis_pool
 
 def get_rag_pipeline_factory(
     db: AsyncSession = Depends(get_db_session),

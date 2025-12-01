@@ -1,3 +1,5 @@
+# app/api/routes/knowledge.py
+
 import logging
 from typing import Sequence
 from pathlib import Path
@@ -5,10 +7,8 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.concurrency import run_in_threadpool
 from sqlmodel import select, desc
-from sqlmodel.ext.asyncio.session import AsyncSession  # 🟢 引入 AsyncSession
-
-from arq import create_pool
-from arq.connections import RedisSettings
+from sqlmodel.ext.asyncio.session import AsyncSession
+from arq import ArqRedis # 🟢 引入类型
 
 from app.api import deps
 from app.core.config import settings
@@ -69,50 +69,44 @@ async def handle_update_knowledge(
 async def handle_delete_knowledge(
     knowledge_id: int,
     db: AsyncSession = Depends(deps.get_db_session),
+    redis: ArqRedis = Depends(deps.get_redis_pool), # 🟢 注入 Redis
 ):
     """
-    异步删除知识库，并级联删除其下所有文档和向量。
+    异步删除知识库 (复用 Redis 连接池)
     """
-    # 1. 查出知识库 (🟢 await)
     knowledge = await db.get(Knowledge, knowledge_id)
     if not knowledge:
         raise HTTPException(status_code=404, detail="知识库不存在")
     
-    # 立即标记为 DELETING
     knowledge.status = KnowledgeStatus.DELETING
-    db.add(knowledge) # 内存操作，不需要 await
-    await db.commit() # 🟢 await
-    # 状态更新不需要 refresh，因为直接返回 message
+    db.add(knowledge)
+    await db.commit()
 
-    # 2. 推送任务到 Redis (Arq 已经是异步的，保持现状)
     try:
-        redis = await create_pool(RedisSettings(host=settings.REDIS_HOST, port=settings.REDIS_PORT))
+        # 🟢 直接使用注入的 redis 实例，不再 create_pool
         await redis.enqueue_job("delete_knowledge_task", knowledge_id)
-        await redis.close()
+        # 🟢 也不需要 redis.close()，生命周期由 app 管理
     except Exception as e:
+        # 这里建议回滚状态或者记录严重错误，但当前逻辑保持与之前一致仅抛出异常
+        logger.error(f"Redis Enqueue Failed: {e}")
         raise HTTPException(status_code=500, detail=f"任务入队失败: {str(e)}")
 
-    # 3. 立即返回，不等待删除完成
     return {"message": f"知识库 {knowledge.name} 删除任务已提交后台处理。"}
 
-# 获取指定知识库下的所有文档
 @router.get("/knowledges/{knowledge_id}/documents", response_model=Sequence[Document])
 async def handle_get_knowledge_documents(
     knowledge_id: int,
     db: AsyncSession = Depends(deps.get_db_session),
 ):
-    # 检查知识库是否存在 (🟢 await)
     knowledge = await db.get(Knowledge, knowledge_id)
     if not knowledge:
         raise HTTPException(status_code=404, detail="知识库不存在")
     
-    # 查询文档
     statement = (
         select(Document)
         .where(Document.knowledge_base_id == knowledge_id)
         .order_by(desc(Document.created_at))
     )
-    # 🟢 异步执行查询: (await db.exec(...)).all()
     result = await db.exec(statement)
     return result.all()
 
@@ -123,19 +117,15 @@ async def upload_file(
         knowledge_id: int,
         file: UploadFile = File(...),
         db: AsyncSession = Depends(deps.get_db_session),
+        redis: ArqRedis = Depends(deps.get_redis_pool), # 🟢 注入 Redis
     ):
 
-    # 检查知识库是否存在
     knowledge = await db.get(Knowledge, knowledge_id)
     if not knowledge:
         raise HTTPException(status_code=404, detail="知识库不存在")
     
-    # 使用 HTTP 409 Conflict 状态码表示状态冲突
     if knowledge.status == KnowledgeStatus.DELETING:
-        raise HTTPException(
-            status_code=409, 
-            detail=f"知识库 '{knowledge.name}' 正在删除中，无法上传新文件。"
-        )
+        raise HTTPException(status_code=409, detail=f"知识库 '{knowledge.name}' 正在删除中，无法上传新文件。")
     
     try:
         saved_path = await run_in_threadpool(save_upload_file, file, knowledge_id)
@@ -154,17 +144,13 @@ async def upload_file(
     )
 
     db.add(doc)
-    await db.commit() # 🟢 await
-    await db.refresh(doc) # 🟢 await
+    await db.commit()
+    await db.refresh(doc)
     
-    # 推送任务到 redis
     try:
-        redis = await create_pool(RedisSettings(host=settings.REDIS_HOST, port=settings.REDIS_PORT))
-        
-        # 检查文件后缀
+        # 🟢 优化：复用连接池
         suffix = Path(file_name).suffix.lower()
         if suffix in [".pdf", ".docx", ".doc"]:
-            # 路由到 Docling 专用队列 (GPU Worker)
             logger.info(f"文件 {file_name} 为复杂文档，路由至 {settings.DOCLING_QUEUE_NAME}")
             await redis.enqueue_job(
                 "process_document_task", 
@@ -172,7 +158,6 @@ async def upload_file(
                 _queue_name=settings.DOCLING_QUEUE_NAME
             )
         else:
-            # 路由到默认队列 (CPU Worker)
             logger.info(f"文件 {file_name} 为普通文档，路由至 {settings.DEFAULT_QUEUE_NAME}")
             await redis.enqueue_job(
                 "process_document_task", 
@@ -180,12 +165,12 @@ async def upload_file(
                 _queue_name=settings.DEFAULT_QUEUE_NAME
             )
             
-        await redis.close()
     except Exception as e:
+        logger.error(f"Job Enqueue Error: {e}")
         doc.status = DocStatus.FAILED
         doc.error_message = f"推送任务到 Redis 失败: {str(e)}"
         db.add(doc)
-        await db.commit() # 🟢 await
+        await db.commit()
         raise HTTPException(status_code=500, detail=f"推送任务到 Redis 失败: {str(e)}")
     
     return doc.id

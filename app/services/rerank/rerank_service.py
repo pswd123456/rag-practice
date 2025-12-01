@@ -19,7 +19,7 @@ class RerankService:
         self.base_url = base_url.rstrip("/")
         self.model_name = model_name
         # 设置合理的超时时间，Rerank 计算量大，建议 10s 以上
-        self.timeout = httpx.Timeout(10.0, connect=2.0)
+        self.timeout = httpx.Timeout(30.0, connect=2.0)
 
     async def rerank_documents(
         self, 
