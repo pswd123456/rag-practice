@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.concurrency import run_in_threadpool
 from sqlmodel import select, desc
 from sqlmodel.ext.asyncio.session import AsyncSession
-from arq import ArqRedis # 🟢 引入类型
+from arq import ArqRedis
 
 from app.api import deps
 from app.core.config import settings
@@ -69,7 +69,7 @@ async def handle_update_knowledge(
 async def handle_delete_knowledge(
     knowledge_id: int,
     db: AsyncSession = Depends(deps.get_db_session),
-    redis: ArqRedis = Depends(deps.get_redis_pool), # 🟢 注入 Redis
+    redis: ArqRedis = Depends(deps.get_redis_pool),
 ):
     """
     异步删除知识库 (复用 Redis 连接池)
@@ -78,18 +78,35 @@ async def handle_delete_knowledge(
     if not knowledge:
         raise HTTPException(status_code=404, detail="知识库不存在")
     
+    # 1. 先标记为 DELETING 并提交，防止用户重复操作，也防止 Worker 还没跑完状态就被改了
+    previous_status = knowledge.status # 记录原始状态，可选用于回滚
     knowledge.status = KnowledgeStatus.DELETING
     db.add(knowledge)
     await db.commit()
 
     try:
-        # 🟢 直接使用注入的 redis 实例，不再 create_pool
+        # 2. 尝试推送到 Redis
         await redis.enqueue_job("delete_knowledge_task", knowledge_id)
-        # 🟢 也不需要 redis.close()，生命周期由 app 管理
+        
     except Exception as e:
-        # 这里建议回滚状态或者记录严重错误，但当前逻辑保持与之前一致仅抛出异常
-        logger.error(f"Redis Enqueue Failed: {e}")
-        raise HTTPException(status_code=500, detail=f"任务入队失败: {str(e)}")
+        logger.error(f"Redis Enqueue Failed for KB {knowledge_id}: {e}", exc_info=True)
+        
+        # 3. [Critical Fix] 补偿事务：如果 Redis 失败，必须更新 DB 状态
+        # 将状态置为 FAILED，这样用户可以看到错误状态，并允许再次尝试删除
+        # (假设前端允许对 FAILED 状态的 Knowledge 进行删除操作)
+        try:
+            # 重新获取对象以确保 session 状态正确（虽然通常不需要，但为了稳健）
+            # 注意：这里不需要 rollback，因为之前的 commit 已经生效。我们需要发起一个新的 update。
+            knowledge.status = KnowledgeStatus.FAILED
+            db.add(knowledge)
+            await db.commit()
+            logger.info(f"KB {knowledge_id} status reverted to FAILED due to Redis error.")
+        except Exception as db_e:
+            # 如果连 DB 写回都失败了，那就是严重故障，记录 Critical 日志
+            logger.critical(f"Double Fault! Failed to revert KB {knowledge_id} status: {db_e}")
+
+        # 向前端抛出 500，告知任务未启动
+        raise HTTPException(status_code=500, detail=f"任务入队失败 (Redis Error): {str(e)}")
 
     return {"message": f"知识库 {knowledge.name} 删除任务已提交后台处理。"}
 
