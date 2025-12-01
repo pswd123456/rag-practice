@@ -9,22 +9,20 @@ from typing import List, Dict, Any
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlalchemy.orm import selectinload
+
 from langfuse import Langfuse
 
-# 复用已有的 Ragas 逻辑
 from ragas.testset import TestsetGenerator
 from ragas.embeddings import LangchainEmbeddingsWrapper
 from ragas.llms import LangchainLLMWrapper
 
 from app.core.config import settings
 from app.domain.models import Testset, Experiment, Document, Knowledge
+
 from app.services.factories import setup_embed_model, setup_llm
 from app.services.minio.file_storage import save_bytes_to_minio, get_minio_client
-
-# [Modified] 引入与 Ingest 管道一致的加载器
 from app.services.loader.docling_loader import load_and_chunk_docling_document
 from app.services.loader import load_single_document, split_docs
-
 from app.services.retrieval import VectorStoreManager
 from app.services.pipelines import RAGPipeline
 from app.services.generation import QAService
@@ -40,8 +38,8 @@ nest_asyncio.apply()
 
 async def generate_testset_pipeline(db: AsyncSession, testset_id: int, source_doc_ids: List[int], generator_model: str = "qwen-max"):
     """
-    根据指定的源文档生成测试集 (异步版)
-    [Consistency Fix]: 确保使用与 Ingestion 阶段完全一致的加载与切片策略 (Docling + HybridChunker)
+    根据指定的源文档生成测试集
+    与 Ingestion 阶段完全一致的加载与切片策略 (Docling + HybridChunker)
     """
     testset = await db.get(Testset, testset_id)
     if not testset:
@@ -55,7 +53,7 @@ async def generate_testset_pipeline(db: AsyncSession, testset_id: int, source_do
         await db.commit()
         
         # 2. 预加载文档信息 (含 Knowledge 配置)
-        # [Fix] 我们需要获取 chunk_size，以便 Docling 切片与入库时一致
+        # 获取 chunk_size，以便 Docling 切片与入库时一致
         doc_infos = []
         for doc_id in source_doc_ids:
             # 显式加载 knowledge_base 关系
@@ -79,7 +77,7 @@ async def generate_testset_pipeline(db: AsyncSession, testset_id: int, source_do
         if not doc_infos:
             raise ValueError("未找到有效文档记录")
 
-        # 定义阻塞的加载函数 (Update)
+        # 定义阻塞的加载函数
         def _blocking_load(infos: List[Dict[str, Any]]):
             loaded_docs = []
             minio_client = get_minio_client()
@@ -101,7 +99,6 @@ async def generate_testset_pipeline(db: AsyncSession, testset_id: int, source_do
                         file_path=tmp.name
                     )
                     
-                    # [Critical Fix] 分支处理：保持与 Ingest Pipeline 一致
                     if suffix in [".pdf", ".docx", ".doc"]:
                         logger.info(f"Testset Generation: 使用 Docling 处理 {filename} (Size={chunk_size})")
                         # 使用 Docling HybridChunker
@@ -199,9 +196,8 @@ async def generate_testset_pipeline(db: AsyncSession, testset_id: int, source_do
             await db.commit()
         raise e
 
-# ... (Run Experiment 部分保持不变) ...
 async def run_experiment_pipeline(db: AsyncSession, experiment_id: int):
-    # 复用之前的逻辑，未修改部分省略以节省篇幅，但请保留原文件中的完整代码
+
     stmt = select(Experiment).where(Experiment.id == experiment_id).options(
         selectinload(Experiment.knowledge),
         selectinload(Experiment.testset)
@@ -224,7 +220,6 @@ async def run_experiment_pipeline(db: AsyncSession, experiment_id: int):
         dataset_name = f"testset_{ts.id}_{ts.name}"
         params = exp.runtime_params or {}
         
-        # 动态加载模型
         student_model_name = params.get("student_model") or params.get("llm") or "qwen-flash"
         student_llm = setup_llm(student_model_name)
         
@@ -233,7 +228,6 @@ async def run_experiment_pipeline(db: AsyncSession, experiment_id: int):
         
         embed_model = setup_embed_model(kb.embed_model)
         
-        # VectorStore 初始化 (部分涉及网络，可考虑 to_thread，但 ensure_collection 主要是检查)
         vector_store_manager = VectorStoreManager(f"kb_{kb.id}", embed_model)
         await asyncio.to_thread(vector_store_manager.ensure_collection)
         
@@ -273,7 +267,6 @@ async def run_experiment_pipeline(db: AsyncSession, experiment_id: int):
                       }
 
         # 4. 遍历并运行实验
-        # 注意：这里我们已经是 async 函数了，可以直接 await pipeline.async_query
         for item in lf_dataset.items:
             question = item.input
             ground_truth = item.expected_output
@@ -288,14 +281,10 @@ async def run_experiment_pipeline(db: AsyncSession, experiment_id: int):
                     **params
                 }
             ) as trace:
-                
-                # A. 执行 RAG Pipeline (异步)
-                # pipeline.async_query 已经是原生异步的
+
                 answer_result, docs = await pipeline.async_query(question)
                 retrieved_contexts = [d.page_content for d in docs]
-                
-                # B. 计算 Ragas 分数 (异步)
-                # evaluator.score_single_item 已经是原生异步的
+
                 scores = await evaluator.score_single_item(
                     question=question,
                     answer=answer_result,
@@ -309,7 +298,7 @@ async def run_experiment_pipeline(db: AsyncSession, experiment_id: int):
                 for metric_name, val in safe_scores.items():
                     trace.score(name=metric_name, value=val)
                     
-                    # 🟢 [关键修复] 名称映射：将 Ragas 的名称映射到 DB/agg_scores 的名称
+                   
                     target_key = metric_name
                     
                     if metric_name == "context_entity_recall":

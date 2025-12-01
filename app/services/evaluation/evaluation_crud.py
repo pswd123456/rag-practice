@@ -15,7 +15,6 @@ async def delete_experiment(db: AsyncSession, experiment_id: int) -> bool:
         raise HTTPException(status_code=404, detail="Experiment not found")
 
     try:
-        # 🟢 [FIX] 必须 await
         await db.delete(exp)
         await db.commit()
         return True
@@ -34,13 +33,13 @@ async def delete_testset(db: AsyncSession, testset_id: int) -> bool:
     try:
         if testset.experiments:
             for exp in testset.experiments:
-                # 🟢 [FIX] 必须 await
+
                 await db.delete(exp)
         
         if testset.file_path:
             delete_file_from_minio(testset.file_path)
 
-        # 🟢 [FIX] 必须 await
+
         await db.delete(testset)
         await db.commit()
         return True

@@ -24,8 +24,6 @@ from ragas.dataset_schema import SingleTurnSample
 from app.services.pipelines import RAGPipeline
 from app.services.evaluation.evaluation_config import EvaluationConfig, get_default_config
 
-# 移除模块级别的 logging 配置代码
-# 只获取 logger 实例
 logger = logging.getLogger("evaluation.runner")
 
 
@@ -70,11 +68,9 @@ class RAGEvaluator:
 
                 # 检查指标是否支持 Prompt 适配 (BaseMetric 通常都支持)
                 if hasattr(metric, "adapt_prompts") and hasattr(metric, "set_prompts"):
-                    # 使用指标自带的 LLM (即我们在 __init__ 传入的 ragas_llm)
-                    # 注意：adapt_prompts 是异步方法
+
                     adapted_prompts = await metric.adapt_prompts(language=language, llm=metric.llm)
                     
-                    # 将适配后的 Prompts 应用回指标实例
                     metric.set_prompts(**adapted_prompts)
                     adapted_count += 1
                     logger.debug(f"指标 [{metric.name}] 语言适配成功")
