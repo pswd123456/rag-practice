@@ -2,7 +2,7 @@
 import logging
 import io
 import os
-import uuid  # 🟢 [Added]
+import uuid 
 from functools import lru_cache
 from fastapi import UploadFile
 from minio import Minio
@@ -44,7 +44,7 @@ def save_upload_file(upload_file: UploadFile, knowledge_id: int) -> str:
     if not client.bucket_exists(bucket_name=settings.MINIO_BUCKET_NAME):
         client.make_bucket(bucket_name=settings.MINIO_BUCKET_NAME)
 
-    # 🟢 [Modified] 生成唯一对象名: {knowledge_id}/{uuid}_{filename}
+    # 生成唯一对象名: {knowledge_id}/{uuid}_{filename}
     # 使用 uuid4 hex (32 chars) 确保唯一性，同时保留原文件名以便 debug 识别
     unique_prefix = uuid.uuid4().hex
     # 替换文件名中的空格或特殊字符是一个好习惯，但这里主要依靠 UUID 保证唯一

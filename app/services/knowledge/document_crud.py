@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 async def delete_document_and_vectors(db: AsyncSession, doc_id: int):
     """
-    执行原子删除 (适配 ES delete_by_query 版)
+    执行原子删除
     """
     # 1. 查找 Document (不再需要 selectinload(Document.chunks))
     doc = await db.get(Document, doc_id)
@@ -28,8 +28,7 @@ async def delete_document_and_vectors(db: AsyncSession, doc_id: int):
             collection_name = f"kb_{knowledge.id}"
             embed_model = setup_embed_model(knowledge.embed_model)
             manager = VectorStoreManager(collection_name, embed_model)
-            
-            # 🟢 [FIX] 改用 delete_by_doc_id
+    
             await asyncio.to_thread(manager.delete_by_doc_id, doc.id)
             
         except Exception as e:
@@ -39,8 +38,6 @@ async def delete_document_and_vectors(db: AsyncSession, doc_id: int):
 
     # 3. 删除数据库记录
     try:
-        # 🟢 [FIX] 不再需要循环删除 chunk
-        # for chunk in doc.chunks: ...
         
         await db.delete(doc)
         await db.commit()
@@ -49,7 +46,7 @@ async def delete_document_and_vectors(db: AsyncSession, doc_id: int):
         logger.error(f"数据库删除文档失败: {e}")
         raise HTTPException(status_code=500, detail=f"数据库删除失败: {str(e)}")
     
-    # 4. 清理 MinIO (保持不变)
+    # 4. 清理 MinIO 
     if doc.file_path:
         try:
             await asyncio.to_thread(delete_file_from_minio, doc.file_path)

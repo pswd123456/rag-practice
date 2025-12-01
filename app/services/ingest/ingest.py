@@ -7,7 +7,7 @@ import asyncio
 import tempfile
 from pathlib import Path
 from sqlmodel import select
-# [Modified] 移除 AsyncSession 依赖，改用 session_maker
+
 from app.db.session import async_session_maker
 from sqlalchemy.orm import selectinload
 
@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 async def process_document_pipeline(doc_id: int):
     """
-    核心文档处理管道 (优化版)：
+    核心文档处理管道
     将 DB 操作与耗时 IO/CPU 操作分离，避免长时间占用数据库连接。
     
     Phases:

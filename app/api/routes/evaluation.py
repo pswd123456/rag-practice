@@ -36,7 +36,7 @@ class ExperimentCreateRequest(BaseModel):
 async def create_generation_task(
     req: TestsetCreateRequest,
     db: AsyncSession = Depends(deps.get_db_session),
-    redis: ArqRedis = Depends(deps.get_redis_pool), # 🟢 注入 Redis
+    redis: ArqRedis = Depends(deps.get_redis_pool), 
 ):
     """
     提交一个测试集生成任务
@@ -52,7 +52,7 @@ async def create_generation_task(
     await db.refresh(testset)
 
     try:
-        # 🟢 优化：复用连接池
+
         await redis.enqueue_job("generate_testset_task", testset.id, req.source_doc_ids, req.generator_llm)
     except Exception as e:
         await db.delete(testset)
@@ -63,7 +63,7 @@ async def create_generation_task(
 
 @router.get("/testsets", response_model=List[Testset])
 async def get_testsets(db: AsyncSession = Depends(deps.get_db_session)):
-    # 🟢 异步查询
+
     result = await db.exec(select(Testset).order_by(desc(Testset.created_at)))
     return result.all()
 
@@ -82,7 +82,7 @@ async def delete_testset_endpoint(
     testset_id: int,
     db: AsyncSession = Depends(deps.get_db_session)
 ):
-    # 🟢 await CRUD
+
     return await evaluation_crud.delete_testset(db, testset_id)
 
 # -------------------------------------------------------
@@ -93,7 +93,7 @@ async def delete_testset_endpoint(
 async def create_experiment_task(
     req: ExperimentCreateRequest,
     db: AsyncSession = Depends(deps.get_db_session),
-    redis: ArqRedis = Depends(deps.get_redis_pool), # 🟢 注入 Redis
+    redis: ArqRedis = Depends(deps.get_redis_pool), 
 ):
     """
     提交一个评测实验任务
@@ -114,7 +114,7 @@ async def create_experiment_task(
     await db.refresh(exp)
 
     try:
-        # 🟢 优化：复用连接池
+
         await redis.enqueue_job("run_experiment_task", exp.id)
     except Exception as e:
         exp.status = "FAILED"
@@ -135,7 +135,7 @@ async def get_experiments(
         query = query.where(Experiment.knowledge_id == knowledge_id)
     
     query = query.order_by(desc(Experiment.created_at))
-    # 🟢 异步查询
+
     result = await db.exec(query)
     return result.all()
 
@@ -144,7 +144,7 @@ async def get_experiment(
     experiment_id: int,
     db: AsyncSession = Depends(deps.get_db_session)
 ):
-    exp = await db.get(Experiment, experiment_id) # 🟢 await
+    exp = await db.get(Experiment, experiment_id)
     if not exp:
         raise HTTPException(status_code=404, detail="Experiment not found")
     return exp
@@ -154,5 +154,5 @@ async def delete_experiment_endpoint(
     experiment_id: int,
     db: AsyncSession = Depends(deps.get_db_session)
 ):
-    # 🟢 await CRUD
+
     return await evaluation_crud.delete_experiment(db, experiment_id)

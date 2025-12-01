@@ -34,9 +34,9 @@ router = APIRouter()
 async def handle_create_knowledge(
     *, # 强制关键字参数
     knowledge_in: KnowledgeCreate,
-    db: AsyncSession = Depends(deps.get_db_session), # 🟢 类型提示变更
+    db: AsyncSession = Depends(deps.get_db_session), 
 ):
-    # 🟢 增加 await
+
     return await knowledge_crud.create_knowledge(db, knowledge_in)
 
 @router.get("/knowledges", response_model=Sequence[KnowledgeRead])
@@ -45,7 +45,7 @@ async def handle_get_all_knowledges(
     skip: int = 0,
     limit: int = 100,
 ):
-    # 🟢 增加 await
+
     return await knowledge_crud.get_all_knowledges(db=db, skip=skip, limit=limit)
 
 @router.get("/knowledges/{knowledge_id}", response_model=KnowledgeRead)
@@ -53,7 +53,7 @@ async def handle_get_knowledge_by_id(
     knowledge_id: int,
     db: AsyncSession = Depends(deps.get_db_session),
 ):
-    # 🟢 增加 await
+
     return await knowledge_crud.get_knowledge_by_id(db=db, knowledge_id=knowledge_id)
 
 @router.put("/knowledges/{knowledge_id}", response_model=KnowledgeRead)
@@ -62,7 +62,7 @@ async def handle_update_knowledge(
     knowledge_in: KnowledgeUpdate,
     db: AsyncSession = Depends(deps.get_db_session),
 ):
-    # 🟢 增加 await
+
     return await knowledge_crud.update_knowledge(db=db, knowledge_id=knowledge_id, knowledge_to_update=knowledge_in)
 
 @router.delete("/knowledges/{knowledge_id}")
@@ -91,7 +91,7 @@ async def handle_delete_knowledge(
     except Exception as e:
         logger.error(f"Redis Enqueue Failed for KB {knowledge_id}: {e}", exc_info=True)
         
-        # 3. [Critical Fix] 补偿事务：如果 Redis 失败，必须更新 DB 状态
+        # 3. 补偿事务：如果 Redis 失败，必须更新 DB 状态
         # 将状态置为 FAILED，这样用户可以看到错误状态，并允许再次尝试删除
         # (假设前端允许对 FAILED 状态的 Knowledge 进行删除操作)
         try:
@@ -134,7 +134,7 @@ async def upload_file(
         knowledge_id: int,
         file: UploadFile = File(...),
         db: AsyncSession = Depends(deps.get_db_session),
-        redis: ArqRedis = Depends(deps.get_redis_pool), # 🟢 注入 Redis
+        redis: ArqRedis = Depends(deps.get_redis_pool),
     ):
 
     knowledge = await db.get(Knowledge, knowledge_id)
@@ -165,7 +165,6 @@ async def upload_file(
     await db.refresh(doc)
     
     try:
-        # 🟢 优化：复用连接池
         suffix = Path(file_name).suffix.lower()
         if suffix in [".pdf", ".docx", ".doc"]:
             logger.info(f"文件 {file_name} 为复杂文档，路由至 {settings.DOCLING_QUEUE_NAME}")
@@ -201,7 +200,7 @@ async def handle_delete_document(
     删除指定文档及其在向量库中的所有切片。
     """
     try:
-        # 调用复杂的服务逻辑，它负责原子删除 (🟢 await)
+        # 调用复杂的服务逻辑，它负责原子删除
         return await delete_document_and_vectors(db=db, doc_id=doc_id)
     except HTTPException as e:
         raise e
@@ -214,7 +213,6 @@ async def handle_get_document(
     doc_id: int,
     db: AsyncSession = Depends(deps.get_db_session),
 ):
-    # 🟢 await
     doc = await db.get(Document, doc_id)
     if not doc:
         raise HTTPException(status_code=404, detail="文档不存在")

@@ -11,7 +11,6 @@ from app.domain.models import (Knowledge,
                                KnowledgeCreate, KnowledgeUpdate, 
                                Document, Experiment)
 from app.services.knowledge.document_crud import delete_document_and_vectors
-# [Added] 引入依赖
 from app.services.retrieval import VectorStoreManager
 from app.services.factories import setup_embed_model
 
@@ -87,7 +86,7 @@ async def delete_knowledge_pipeline(db: AsyncSession, knowledge_id: int):
     except Exception as e:
         logger.error(f"删除关联实验失败: {e}")
 
-    # 3. [FIX] 删除 ES 索引本身 (防止空索引残留)
+    # 3.删除 ES 索引本身 (防止空索引残留)
     try:
         collection_name = f"kb_{knowledge.id}"
         # 此时只需要实例化 Manager 来执行删除，embed_model 实际上只需要个占位，但为了合规我们正常初始化
