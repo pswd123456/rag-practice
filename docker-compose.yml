@@ -195,6 +195,11 @@ services:
       - ./logs:/app/logs
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'  # 限制此容器最多用 2 个核
+          memory: 4G
 
   docling-worker:
     build: .
@@ -234,14 +239,14 @@ services:
       - rag-net
     deploy:
       resources:
+        limits:
+          cpus: '6.0' # Docling 比较吃算力，给多点，但不给全部
+          memory: 8G
         reservations:
           devices:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
-        limits:
-          cpus: '4.0'    # 限制 OCR 任务最多吃掉 4 个核
-          memory: 4G
 
   # ----------------------------------------------------------------
   # Rerank 服务 (TEI)
@@ -266,10 +271,6 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
-      limits:
-          cpus: '2.0'
-          memory: 4G
-
   # ----------------------------------------------------------------
   # 3. 可观测性服务 (Langfuse) 
   # ----------------------------------------------------------------
