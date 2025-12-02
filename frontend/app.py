@@ -71,43 +71,23 @@ def render_login_page():
                             st.error(f"注册失败: {res}")
 
 def render_main_app():
-    """
-    渲染主应用逻辑 (原 app.py 的内容)
-    """
-    st.sidebar.title("🗂️ RAG Practice")
-    
-    # --- 用户信息区域 ---
-    user = st.session_state.get("user_info", {})
-    email_display = user.get("email", "Unknown User")
-    name_display = user.get("full_name") or email_display.split("@")[0]
-    
-    with st.sidebar:
-        st.info(f"👤 欢迎, **{name_display}**")
-        if st.button("🚪 退出登录", use_container_width=True):
-            st.session_state.clear()
-            st.rerun()
-        st.divider()
-
-    # --- 核心业务逻辑 ---
-    selected_kb = render_sidebar()
+    # --- Sidebar ---
+    # 这里接收新的返回值: (selected_kb, current_session)
+    selected_kb, current_session = render_sidebar()
 
     st.title("🗂️ RAG Practice 综合管理台")
 
     if selected_kb:
-        # 状态拦截
         if selected_kb.get("status") == "DELETING":
             st.warning(f"⚠️ 知识库「{selected_kb['name']}」正在后台异步删除中。")
-            st.info("请稍等片刻，或点击左上角手动刷新以查看最新状态。")
             st.stop()
-
-        st.header(f"当前知识库: {selected_kb['name']}")
-        st.caption(f"ID: {selected_kb['id']} | Embed: `{selected_kb.get('embed_model')}` | Chunk: `{selected_kb.get('chunk_size')}`")
 
         # 渲染 Tabs
         tab1, tab2, tab3, tab4 = st.tabs(["💬 对话检索", "📄 文档管理", "📊 评估实验", "⚙️ 设置"])
 
         with tab1:
-            render_chat_tab(selected_kb)
+            # 传入 current_session
+            render_chat_tab(selected_kb, current_session)
         
         with tab2:
             render_documents_tab(selected_kb)
@@ -122,13 +102,8 @@ def render_main_app():
         st.markdown("👋 **欢迎使用 RAG 管理台**")
         st.markdown("请在左侧侧边栏 **新建** 或 **选择** 一个知识库以开始。")
 
-# --- App Entry Point ---
-
 if __name__ == "__main__":
-    # 检查 Token 是否存在且不为空
     if "token" not in st.session_state or not st.session_state["token"]:
         render_login_page()
     else:
-        # 简单的 Token 有效性预检 (可选，防止 Token 过期但页面未刷新)
-        # 如果追求极致性能可跳过，依靠 API 的 401 拦截
         render_main_app()

@@ -1,3 +1,4 @@
+# app/api/__init__.py
 from fastapi import APIRouter
 from .routes import chat, knowledge, evaluation, login
 

@@ -1,10 +1,10 @@
 # app/api/routes/knowledge.py
 
 import logging
-from typing import Sequence
+from typing import Sequence, List
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.concurrency import run_in_threadpool
 from sqlmodel import select, desc
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -18,7 +18,8 @@ from app.domain.models import (Knowledge,
                                KnowledgeUpdate,
                                KnowledgeStatus,
                                Document,
-                               DocStatus)
+                               DocStatus,
+                               User)
 
 from app.services.knowledge import knowledge_crud
 from app.services.minio.file_storage import save_upload_file
@@ -29,95 +30,92 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # ------------------ Knowledge base management ------------------
+# ------------------ Knowledge base management ------------------
 
 @router.post("/knowledges", response_model=KnowledgeRead)
 async def handle_create_knowledge(
-    *, # 强制关键字参数
+    *,
     knowledge_in: KnowledgeCreate,
-    db: AsyncSession = Depends(deps.get_db_session), 
+    db: AsyncSession = Depends(deps.get_db_session),
+    current_user: User = Depends(deps.get_current_user), # [New]
 ):
-
-    return await knowledge_crud.create_knowledge(db, knowledge_in)
+    """
+    创建知识库 (绑定到当前用户)
+    """
+    return await knowledge_crud.create_knowledge(db, knowledge_in, user_id=current_user.id)
 
 @router.get("/knowledges", response_model=Sequence[KnowledgeRead])
 async def handle_get_all_knowledges(
     db: AsyncSession = Depends(deps.get_db_session),
+    current_user: User = Depends(deps.get_current_user), # [New]
     skip: int = 0,
     limit: int = 100,
 ):
-
-    return await knowledge_crud.get_all_knowledges(db=db, skip=skip, limit=limit)
+    """
+    获取当前用户的知识库列表
+    """
+    return await knowledge_crud.get_all_knowledges(db=db, user_id=current_user.id, skip=skip, limit=limit)
 
 @router.get("/knowledges/{knowledge_id}", response_model=KnowledgeRead)
 async def handle_get_knowledge_by_id(
     knowledge_id: int,
     db: AsyncSession = Depends(deps.get_db_session),
+    current_user: User = Depends(deps.get_current_user), # [New]
 ):
-
-    return await knowledge_crud.get_knowledge_by_id(db=db, knowledge_id=knowledge_id)
+    return await knowledge_crud.get_knowledge_by_id(db=db, knowledge_id=knowledge_id, user_id=current_user.id)
 
 @router.put("/knowledges/{knowledge_id}", response_model=KnowledgeRead)
 async def handle_update_knowledge(
     knowledge_id: int,
     knowledge_in: KnowledgeUpdate,
     db: AsyncSession = Depends(deps.get_db_session),
+    current_user: User = Depends(deps.get_current_user), # [New]
 ):
-
-    return await knowledge_crud.update_knowledge(db=db, knowledge_id=knowledge_id, knowledge_to_update=knowledge_in)
+    return await knowledge_crud.update_knowledge(
+        db=db, 
+        knowledge_id=knowledge_id, 
+        user_id=current_user.id, 
+        knowledge_to_update=knowledge_in
+    )
 
 @router.delete("/knowledges/{knowledge_id}")
 async def handle_delete_knowledge(
     knowledge_id: int,
     db: AsyncSession = Depends(deps.get_db_session),
     redis: ArqRedis = Depends(deps.get_redis_pool),
+    current_user: User = Depends(deps.get_current_user), # [New]
 ):
     """
-    异步删除知识库 (复用 Redis 连接池)
+    异步删除知识库
     """
-    knowledge = await db.get(Knowledge, knowledge_id)
-    if not knowledge:
-        raise HTTPException(status_code=404, detail="知识库不存在")
+    # 先校验所有权
+    knowledge = await knowledge_crud.get_knowledge_by_id(db, knowledge_id, current_user.id)
     
-    # 1. 先标记为 DELETING 并提交，防止用户重复操作，也防止 Worker 还没跑完状态就被改了
-    previous_status = knowledge.status # 记录原始状态，可选用于回滚
+    # 标记状态
     knowledge.status = KnowledgeStatus.DELETING
     db.add(knowledge)
     await db.commit()
 
     try:
-        # 2. 尝试推送到 Redis
         await redis.enqueue_job("delete_knowledge_task", knowledge_id)
-        
     except Exception as e:
-        logger.error(f"Redis Enqueue Failed for KB {knowledge_id}: {e}", exc_info=True)
-        
-        # 3. 补偿事务：如果 Redis 失败，必须更新 DB 状态
-        # 将状态置为 FAILED，这样用户可以看到错误状态，并允许再次尝试删除
-        # (假设前端允许对 FAILED 状态的 Knowledge 进行删除操作)
-        try:
-            # 重新获取对象以确保 session 状态正确（虽然通常不需要，但为了稳健）
-            # 注意：这里不需要 rollback，因为之前的 commit 已经生效。我们需要发起一个新的 update。
-            knowledge.status = KnowledgeStatus.FAILED
-            db.add(knowledge)
-            await db.commit()
-            logger.info(f"KB {knowledge_id} status reverted to FAILED due to Redis error.")
-        except Exception as db_e:
-            # 如果连 DB 写回都失败了，那就是严重故障，记录 Critical 日志
-            logger.critical(f"Double Fault! Failed to revert KB {knowledge_id} status: {db_e}")
+        logger.error(f"Redis Enqueue Failed: {e}")
+        knowledge.status = KnowledgeStatus.FAILED
+        db.add(knowledge)
+        await db.commit()
+        raise HTTPException(status_code=500, detail="任务入队失败")
 
-        # 向前端抛出 500，告知任务未启动
-        raise HTTPException(status_code=500, detail=f"任务入队失败 (Redis Error): {str(e)}")
+    return {"message": f"知识库 {knowledge.name} 删除任务已提交。"}
 
-    return {"message": f"知识库 {knowledge.name} 删除任务已提交后台处理。"}
-
+# ------------------- Document management ------------------
 @router.get("/knowledges/{knowledge_id}/documents", response_model=Sequence[Document])
 async def handle_get_knowledge_documents(
     knowledge_id: int,
     db: AsyncSession = Depends(deps.get_db_session),
+    current_user: User = Depends(deps.get_current_user),
 ):
-    knowledge = await db.get(Knowledge, knowledge_id)
-    if not knowledge:
-        raise HTTPException(status_code=404, detail="知识库不存在")
+    # 校验 Knowledge 权限
+    await knowledge_crud.get_knowledge_by_id(db, knowledge_id, current_user.id)
     
     statement = (
         select(Document)
@@ -126,23 +124,20 @@ async def handle_get_knowledge_documents(
     )
     result = await db.exec(statement)
     return result.all()
-
-# ------------------- Document management ------------------
-
 @router.post("/{knowledge_id}/upload", response_model=int)
 async def upload_file(
         knowledge_id: int,
         file: UploadFile = File(...),
         db: AsyncSession = Depends(deps.get_db_session),
         redis: ArqRedis = Depends(deps.get_redis_pool),
+        current_user: User = Depends(deps.get_current_user), # [New]
     ):
-
-    knowledge = await db.get(Knowledge, knowledge_id)
-    if not knowledge:
-        raise HTTPException(status_code=404, detail="知识库不存在")
+    
+    # 校验权限
+    knowledge = await knowledge_crud.get_knowledge_by_id(db, knowledge_id, current_user.id)
     
     if knowledge.status == KnowledgeStatus.DELETING:
-        raise HTTPException(status_code=409, detail=f"知识库 '{knowledge.name}' 正在删除中，无法上传新文件。")
+        raise HTTPException(status_code=409, detail=f"知识库 '{knowledge.name}' 正在删除中。")
     
     try:
         saved_path = await run_in_threadpool(save_upload_file, file, knowledge_id)
