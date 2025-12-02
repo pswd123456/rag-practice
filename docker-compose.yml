@@ -136,28 +136,28 @@ services:
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
 
-  frontend:
-    build: .              # 复用与 api 相同的构建上下文和 Dockerfile
-    container_name: rag-frontend
-    # 覆盖默认的 uvicorn 启动命令，改为启动 streamlit
-    command: streamlit run frontend/app.py --server.port 8501 --server.address 0.0.0.0
-    ports:
-      - "8501:8501"       # 暴露 Streamlit 默认端口
-    volumes:
-      - ./:/app           # 挂载目录实现代码热重载 (Hot-reload)
-      - ./logs:/app/logs
-      - /etc/localtime:/etc/localtime:ro
-      - /etc/timezone:/etc/timezone:ro
-    environment:
-      - TZ=Asia/Shanghai
-      # 显式告诉前端 API 的地址（虽然您的代码有自动检测，但在 Docker 内显式指定更稳健）
-      # 注意：需要在 frontend/api.py 中做微小适配才能读取此变量，或者依赖现有的自动检测逻辑
-      - API_BASE_URL=http://api:8000 
-    depends_on:
-      api:
-        condition: service_started # 确保后端先启动
-    networks:
-      - rag-net
+  # frontend:
+  #   build: .              # 复用与 api 相同的构建上下文和 Dockerfile
+  #   container_name: rag-frontend
+  #   # 覆盖默认的 uvicorn 启动命令，改为启动 streamlit
+  #   command: streamlit run frontend/streamlit/app.py --server.port 8501 --server.address 0.0.0.0
+  #   ports:
+  #     - "8501:8501"       # 暴露 Streamlit 默认端口
+  #   volumes:
+  #     - ./:/app           # 挂载目录实现代码热重载 (Hot-reload)
+  #     - ./logs:/app/logs
+  #     - /etc/localtime:/etc/localtime:ro
+  #     - /etc/timezone:/etc/timezone:ro
+  #   environment:
+  #     - TZ=Asia/Shanghai
+  #     # 显式告诉前端 API 的地址（虽然您的代码有自动检测，但在 Docker 内显式指定更稳健）
+  #     # 注意：需要在 frontend/api.py 中做微小适配才能读取此变量，或者依赖现有的自动检测逻辑
+  #     - API_BASE_URL=http://api:8000 
+  #   depends_on:
+  #     api:
+  #       condition: service_started # 确保后端先启动
+  #   networks:
+  #     - rag-net
 
   worker:
     build: .
