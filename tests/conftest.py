@@ -1,3 +1,4 @@
+# tests/conftest.py
 import pytest
 import pytest_asyncio
 from typing import AsyncGenerator, List
@@ -25,7 +26,7 @@ TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 @pytest_asyncio.fixture(name="db_session")
 async def db_session_fixture() -> AsyncGenerator[AsyncSession, None]:
     engine = create_async_engine(
-        TEST_DATABASE_URL, 
+        "sqlite+aiosqlite:///:memory:", 
         connect_args={"check_same_thread": False}, 
         poolclass=StaticPool,
     )
@@ -142,7 +143,6 @@ class AsyncMock(MagicMock):
 async def async_client(db_session) -> AsyncGenerator[AsyncClient, None]: 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         yield client
-
 @pytest.fixture
 def mock_es_client():
     get_es_client.cache_clear()

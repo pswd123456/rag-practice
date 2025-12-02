@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Dict, Any
 
 class JsonFormatter(logging.Formatter):
-    # ... (保持不变) ...
     def format(self, record: logging.LogRecord) -> str:
         log_record = {
             "timestamp": self.formatTime(record, self.datefmt),
@@ -24,15 +23,13 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(log_record, ensure_ascii=False)
 
 def get_logging_config(log_file_path: str, log_level: str = "INFO") -> Dict[str, Any]:
-    # ... (保持不变) ...
     # 确保日志目录存在
     log_path = Path(log_file_path)
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
     config = {
         'version': 1,
-        # 关键：设为 False 以保留 uvicorn 等第三方库的 logger 结构，
-        # 但我们需要手动清理 handler 以免重复
+        # 关键：设为 False 以保留 uvicorn 等第三方库的 logger 结构
         'disable_existing_loggers': False, 
 
         # --- Formatters ---
@@ -81,7 +78,7 @@ def get_logging_config(log_file_path: str, log_level: str = "INFO") -> Dict[str,
             'app': {
                 'level': 'DEBUG',
                 'handlers': ['console', 'file'],
-                'propagate': False  # 禁止传播，防止 Root Logger 再打一遍
+                'propagate': False
             },
             'evaluation': {
                 'level': 'DEBUG',
@@ -90,7 +87,6 @@ def get_logging_config(log_file_path: str, log_level: str = "INFO") -> Dict[str,
             },
             
             # --- Uvicorn 日志接管 ---
-            # 将 Uvicorn 的日志重定向到我们的 Handler，确保格式统一且不重复
             'uvicorn': {
                 'handlers': ['console', 'file'],
                 'level': 'INFO',
@@ -115,6 +111,10 @@ def get_logging_config(log_file_path: str, log_level: str = "INFO") -> Dict[str,
             'multipart': {'level': 'WARNING'},
             'watchfiles': {'level': 'WARNING'},
             'urllib3': {'level': 'WARNING'},
+
+            # [Fix] Elasticsearch 连接刷屏降噪
+            'elasticsearch': {'level': 'ERROR'},
+            'elastic_transport': {'level': 'ERROR'},
         }
     }
     return config
@@ -122,16 +122,12 @@ def get_logging_config(log_file_path: str, log_level: str = "INFO") -> Dict[str,
 def setup_logging(log_file_path: str, log_level: str = "INFO"):
     """
     初始化日志配置。
-    在应用配置前，先清理 Root Logger 的 Handlers，防止重复打印。
     """
-    # 1. 强制清理 Root Logger 的 Handlers
-    # 这是解决 "日志打印两遍" 的关键步骤
     root_logger = logging.getLogger()
     if root_logger.handlers:
         for handler in root_logger.handlers[:]:
             root_logger.removeHandler(handler)
             handler.close()
     
-    # 2. 应用新配置
     config = get_logging_config(log_file_path, log_level)
     logging.config.dictConfig(config)

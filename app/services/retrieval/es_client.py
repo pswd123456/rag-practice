@@ -14,7 +14,6 @@ logger = logging.getLogger(__name__)
 def get_es_client() -> Elasticsearch:
     """
     创建并缓存全局 Elasticsearch 客户端 (Sync)。
-    使用 lru_cache 确保单例模式，避免重复创建连接池。
     """
     logger.info(f"正在初始化 Elasticsearch 客户端: {settings.ES_URL}")
     
@@ -26,11 +25,9 @@ def get_es_client() -> Elasticsearch:
         "retry_on_timeout": True,
     }
 
-    # 处理账号密码认证 (针对生产环境)
     if settings.ES_USER and settings.ES_PASSWORD:
         connect_kwargs["basic_auth"] = (settings.ES_USER, settings.ES_PASSWORD)
     
-    # 初始化客户端
     try:
         client = Elasticsearch(**connect_kwargs)
         return client
@@ -38,24 +35,30 @@ def get_es_client() -> Elasticsearch:
         logger.error(f"Elasticsearch 客户端初始化失败: {e}")
         raise e
 
+def _log_attempt_delay(retry_state):
+    """重试前的简要日志回调"""
+    if retry_state.outcome.failed:
+        exc = retry_state.outcome.exception()
+        # 只打印简短错误信息，不打印堆栈
+        logger.warning(
+            f"⏳ Elasticsearch 尚未就绪，将在 {retry_state.next_action.sleep}s 后重试... "
+            f"(Attempt {retry_state.attempt_number}) | Error: {str(exc)}"
+        )
+
 @retry(
-    stop=stop_after_attempt(10),       # 最多重试 10 次
+    stop=stop_after_attempt(20),       # [Mod] 增加重试次数: 20次 * 3s = 60s
     wait=wait_fixed(3),                # 每次间隔 3 秒
-    retry=retry_if_exception_type(Exception), # 遇到任何异常都重试
-    reraise=True                       # 最后一次失败抛出异常
+    retry=retry_if_exception_type(Exception), 
+    reraise=True,
+    before_sleep=_log_attempt_delay    # [Mod] 使用回调机制打印日志
 )
 def wait_for_es():
     """
     阻塞式等待 ES 服务就绪。
-    通常在应用启动 (lifespan) 或 Worker 启动时调用。
     """
     client = get_es_client()
-    try:
-        # 使用 info() 接口测试连接
-        info = client.info()
-        version = info['version']['number']
-        logger.info(f"✅ Elasticsearch 已连接! Version: {version} | Cluster: {info['cluster_name']}")
-        return True
-    except Exception as e:
-        logger.warning(f"⏳ 等待 Elasticsearch 就绪... (Error: {str(e)})")
-        raise e
+    # 直接调用，Tenacity 会自动捕获异常并重试
+    info = client.info()
+    version = info['version']['number']
+    logger.info(f"✅ Elasticsearch 已连接! Version: {version} | Cluster: {info['cluster_name']}")
+    return True

@@ -19,8 +19,11 @@ from app.domain.models import (Knowledge,
                                KnowledgeStatus,
                                Document,
                                DocStatus,
-                               User)
+                               User,
+                               UserKnowledgeRole
+                               )
 
+from app.domain.schemas.knowledge_member import MemberAddRequest, MemberRead
 from app.services.knowledge import knowledge_crud
 from app.services.minio.file_storage import save_upload_file
 from app.services.knowledge.document_crud import delete_document_and_vectors
@@ -29,7 +32,42 @@ from app.services.knowledge.document_crud import delete_document_and_vectors
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# ------------------ Knowledge base management ------------------
+# -------------------------------------------------------
+# Member Management
+# -------------------------------------------------------
+
+@router.post("/{knowledge_id}/members", response_model=MemberRead)
+async def add_member_endpoint(
+    knowledge_id: int,
+    req: MemberAddRequest,
+    db: AsyncSession = Depends(deps.get_db_session),
+    current_user: User = Depends(deps.get_current_user),
+):
+    """邀请新成员 (Owner only)"""
+    return await knowledge_crud.add_member(
+        db, knowledge_id, current_user.id, req.email, req.role
+    )
+
+@router.delete("/{knowledge_id}/members/{user_id}")
+async def remove_member_endpoint(
+    knowledge_id: int,
+    user_id: int,
+    db: AsyncSession = Depends(deps.get_db_session),
+    current_user: User = Depends(deps.get_current_user),
+):
+    """移除成员 (Owner only)"""
+    await knowledge_crud.remove_member(db, knowledge_id, current_user.id, user_id)
+    return {"message": "Member removed"}
+
+@router.get("/{knowledge_id}/members", response_model=list[MemberRead])
+async def get_members_endpoint(
+    knowledge_id: int,
+    db: AsyncSession = Depends(deps.get_db_session),
+    current_user: User = Depends(deps.get_current_user),
+):
+    """获取成员列表"""
+    return await knowledge_crud.get_members(db, knowledge_id, current_user.id)
+
 # ------------------ Knowledge base management ------------------
 
 @router.post("/knowledges", response_model=KnowledgeRead)
@@ -126,12 +164,17 @@ async def handle_get_knowledge_documents(
     return result.all()
 @router.post("/{knowledge_id}/upload", response_model=int)
 async def upload_file(
-        knowledge_id: int,
-        file: UploadFile = File(...),
-        db: AsyncSession = Depends(deps.get_db_session),
-        redis: ArqRedis = Depends(deps.get_redis_pool),
-        current_user: User = Depends(deps.get_current_user), # [New]
-    ):
+    knowledge_id: int,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(deps.get_db_session),
+    redis: ArqRedis = Depends(deps.get_redis_pool),
+    current_user: User = Depends(deps.get_current_user), 
+):
+    # [RBAC Check] 只有 OWNER 或 EDITOR 可以上传
+    await knowledge_crud.check_privilege(
+        db, knowledge_id, current_user.id, 
+        [UserKnowledgeRole.OWNER, UserKnowledgeRole.EDITOR]
+    )
     
     # 校验权限
     knowledge = await knowledge_crud.get_knowledge_by_id(db, knowledge_id, current_user.id)
@@ -190,12 +233,24 @@ async def upload_file(
 async def handle_delete_document(
     doc_id: int,
     db: AsyncSession = Depends(deps.get_db_session),
+    current_user: User = Depends(deps.get_current_user), # 新增当前用户依赖
 ):
     """
-    删除指定文档及其在向量库中的所有切片。
+    删除文档 (需反查 Knowledge 权限)
     """
+    # 1. 先查 Document 找到 knowledge_id
+    doc = await db.get(Document, doc_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="文档不存在")
+    
+    # 2. [RBAC Check] 检查用户在对应 KB 中是否有 OWNER/EDITOR 权限
+    await knowledge_crud.check_privilege(
+        db, doc.knowledge_base_id, current_user.id,
+        [UserKnowledgeRole.OWNER, UserKnowledgeRole.EDITOR]
+    )
+    
+    # 3. 执行删除
     try:
-        # 调用复杂的服务逻辑，它负责原子删除
         return await delete_document_and_vectors(db=db, doc_id=doc_id)
     except HTTPException as e:
         raise e

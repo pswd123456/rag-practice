@@ -4,30 +4,46 @@ import time
 import api
 
 def render_sidebar():
-    """
-    渲染侧边栏，返回:
-    - selected_kb: 当前选中的知识库对象
-    - current_session: 当前选中的会话对象 (可能为 None)
-    """
     with st.sidebar:
         st.header("📚 知识库与会话")
         
-        # ==========================================
-        # 1. 知识库选择区
-        # ==========================================
         kb_list = api.get_knowledges()
         selected_kb = None
         
         if not kb_list:
             st.info("暂无知识库")
         else:
-            # 使用 selectbox 节省空间
-            kb_options = {k["name"]: k for k in kb_list}
-            kb_name = st.selectbox("当前知识库", list(kb_options.keys()))
-            selected_kb = kb_options[kb_name]
+            # === 分组逻辑 ===
+            my_kbs = [k for k in kb_list if k['role'] == 'OWNER']
+            shared_kbs = [k for k in kb_list if k['role'] != 'OWNER']
             
-            if selected_kb.get("status") == "DELETING":
-                st.warning("🔴 此知识库正在删除中...")
+            kb_options = {}
+            
+            # 1. 我创建的
+            if my_kbs:
+                st.markdown("👤 **我创建的**")
+                for k in my_kbs:
+                    # 使用 emoji 或单纯的名称
+                    label = f"📘 {k['name']}"
+                    kb_options[label] = k
+            
+            # 2. 共享给我的
+            if shared_kbs:
+                st.markdown("👥 **协作共享**")
+                for k in shared_kbs:
+                    role_badge = "✏️" if k['role'] == 'EDITOR' else "👀"
+                    label = f"{role_badge} {k['name']}"
+                    kb_options[label] = k
+            
+            # 渲染选择框 (合并列表)
+            # 注意：Streamlit selectbox key 必须唯一，这里用 label
+            all_labels = list(kb_options.keys())
+            if all_labels:
+                selected_label = st.selectbox("切换知识库", all_labels, label_visibility="collapsed")
+                selected_kb = kb_options[selected_label]
+            
+                if selected_kb.get("status") == "DELETING":
+                    st.warning("🔴 此知识库正在删除中...")
 
         with st.expander("➕ 新建知识库"):
             with st.form("create_kb_form"):

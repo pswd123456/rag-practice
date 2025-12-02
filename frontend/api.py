@@ -282,3 +282,30 @@ def delete_experiment(exp_id):
         res = httpx.delete(f"{API_BASE_URL}/evaluation/experiments/{exp_id}", headers=_get_headers())
         return _handle_response(res)
     except Exception as e: return False, str(e)
+
+
+def get_members(kb_id: int):
+    try:
+        res = httpx.get(f"{API_BASE_URL}/knowledge/{kb_id}/members", headers=_get_headers())
+        if res.status_code == 200:
+            return res.json()
+        elif res.status_code == 401:
+            _handle_response(res)
+    except Exception as e:
+        pass
+    return []
+
+def add_member(kb_id: int, email: str, role: str):
+    try:
+        payload = {"email": email, "role": role}
+        res = httpx.post(f"{API_BASE_URL}/knowledge/{kb_id}/members", json=payload, headers=_get_headers())
+        return _handle_response(res)
+    except Exception as e:
+        return False, str(e)
+
+def remove_member(kb_id: int, user_id: int):
+    try:
+        res = httpx.delete(f"{API_BASE_URL}/knowledge/{kb_id}/members/{user_id}", headers=_get_headers())
+        return _handle_response(res)
+    except Exception as e:
+        return False, str(e)

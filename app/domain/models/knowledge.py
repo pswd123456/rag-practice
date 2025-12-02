@@ -2,6 +2,7 @@
 from typing import Optional, List, TYPE_CHECKING
 from sqlmodel import SQLModel, Field, Relationship
 from enum import Enum
+from .user_knowledge_link import UserKnowledgeLink, UserKnowledgeRole
 
 if TYPE_CHECKING:
     from .document import Document
@@ -15,7 +16,7 @@ class KnowledgeStatus(str, Enum):
     FAILED = "FAILED"
 
 class KnowledgeBaseBase(SQLModel):
-    name: str = Field(index=True) # 注意：移除了 unique=True，因为不同用户可能有同名库，或者需要在应用层做 (user_id, name) 联合唯一
+    name: str = Field(index=True)
     description: Optional[str] = Field(default=None)
     embed_model: str = Field(default="text-embedding-v4", description="embedding 模型名称")
     chunk_size: int = Field(default=512, description="分块大小")
@@ -24,8 +25,8 @@ class KnowledgeBaseBase(SQLModel):
 class Knowledge(KnowledgeBaseBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     
-
-    user_id: int = Field(foreign_key="user.id", nullable=False)
+    # [修改] 移除了 user_id 字段
+    # user_id: int = Field(foreign_key="user.id", nullable=False)
 
     status: KnowledgeStatus = Field(default=KnowledgeStatus.NORMAL)
     
@@ -33,7 +34,10 @@ class Knowledge(KnowledgeBaseBase, table=True):
     documents: List["Document"] = Relationship(back_populates="knowledge_base")
     experiments: List["Experiment"] = Relationship(back_populates="knowledge")
     
-    user: "User" = Relationship(back_populates="knowledges")
+    # [修改] M:N 关系定义
+    # link_model 指向中间表
+    users: List["User"] = Relationship(back_populates="knowledges", link_model=UserKnowledgeLink)
+    
     chat_sessions: List["ChatSession"] = Relationship(back_populates="knowledge")
 
 class KnowledgeCreate(KnowledgeBaseBase):
@@ -42,7 +46,7 @@ class KnowledgeCreate(KnowledgeBaseBase):
 class KnowledgeRead(KnowledgeBaseBase):
     id: int
     status: KnowledgeStatus
-    user_id: int # API 可能会返回 Owner ID
+    role: UserKnowledgeRole = Field(default=UserKnowledgeRole.VIEWER)
 
 class KnowledgeUpdate(KnowledgeBaseBase):
     name: Optional[str] = None
