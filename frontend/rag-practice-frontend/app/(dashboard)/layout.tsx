@@ -1,3 +1,4 @@
+// frontend/rag-practice-frontend/app/(dashboard)/layout.tsx
 "use client";
 
 import { useEffect, useState } from "react";
@@ -6,6 +7,7 @@ import { Menu } from "lucide-react";
 
 import { AppSidebar } from "@/components/business/app-sidebar";
 import { UserNav } from "@/components/business/user-nav";
+import { ModeToggle } from "@/components/business/mode-toggle"; // 🟢 引入
 import { useAuthStore } from "@/lib/store";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
@@ -16,27 +18,24 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const router = useRouter();
-  const { isAuthenticated, token } = useAuthStore();
+  const { isAuthenticated } = useAuthStore();
   const [isClient, setIsClient] = useState(false);
 
-  // 1. 客户端挂载检测 (避免 Hydration Mismatch)
   useEffect(() => {
     setIsClient(true);
   }, []);
 
-  // 2. 路由保护 (Client-side Guard)
   useEffect(() => {
     if (isClient && !isAuthenticated) {
       router.replace("/login");
     }
   }, [isClient, isAuthenticated, router]);
 
-  // 避免在检查完之前渲染内容造成闪烁
   if (!isClient) return null;
   if (!isAuthenticated) return null;
 
   return (
-    <div className="flex min-h-screen flex-col md:flex-row">
+    <div className="flex min-h-screen flex-col md:flex-row bg-background">
       {/* --- Desktop Sidebar --- */}
       <aside className="hidden w-64 flex-col md:flex fixed inset-y-0 z-50">
         <AppSidebar />
@@ -45,7 +44,7 @@ export default function DashboardLayout({
       {/* --- Mobile Header & Content --- */}
       <div className="flex-1 md:ml-64 flex flex-col min-h-screen">
         {/* Header */}
-        <header className="sticky top-0 z-40 flex h-16 items-center gap-4 border-b bg-background px-6 shadow-sm">
+        <header className="sticky top-0 z-40 flex h-16 items-center gap-4 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-6 shadow-sm">
           {/* Mobile Sidebar Trigger */}
           <Sheet>
             <SheetTrigger asChild>
@@ -60,14 +59,17 @@ export default function DashboardLayout({
           </Sheet>
 
           <div className="flex-1">
-            {/* Breadcrumbs or Title could go here */}
+            {/* Title / Breadcrumbs */}
           </div>
 
-          <UserNav />
+          <div className="flex items-center gap-2">
+            <ModeToggle /> {/* 🟢 添加切换按钮 */}
+            <UserNav />
+          </div>
         </header>
 
         {/* Main Content Area */}
-        <main className="flex-1 p-6 md:p-8 bg-zinc-50/50 dark:bg-zinc-950">
+        <main className="flex-1 p-6 md:p-8 bg-zinc-50/50 dark:bg-zinc-950/50">
           {children}
         </main>
       </div>

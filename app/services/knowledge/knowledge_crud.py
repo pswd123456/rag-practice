@@ -213,28 +213,33 @@ async def get_knowledge_by_id(
     db: AsyncSession, 
     knowledge_id: int, 
     user_id: int
-) -> Knowledge:
+) -> KnowledgeRead: # 修改返回类型提示为 KnowledgeRead
     """
     获取指定 ID 的知识库，并校验用户是否有权访问。
-    [Refactor]: 通过 UserKnowledgeLink 进行鉴权。
+    [Fix]: 显式查询 Role 并返回 KnowledgeRead 对象，防止 API 响应默认 Role 为 VIEWER。
     """
-    # 联表查询: Knowledge JOIN UserKnowledgeLink
-    # 只要存在 Link 记录，即认为有“访问权”(VIEWER/EDITOR/OWNER)
+    # 联表查询: 获取 Knowledge 和 对应的 Role
     statement = (
-        select(Knowledge)
+        select(Knowledge, UserKnowledgeLink.role)
         .join(UserKnowledgeLink, Knowledge.id == UserKnowledgeLink.knowledge_id)
         .where(Knowledge.id == knowledge_id)
         .where(UserKnowledgeLink.user_id == user_id)
     )
     
     result = await db.exec(statement)
-    knowledge = result.first()
+    row = result.first()
     
-    if not knowledge:
+    if not row:
         # 保持安全性，未授权也返回 404，防止枚举 ID
         raise HTTPException(status_code=404, detail="Knowledge not found or permission denied")
     
-    return knowledge
+    knowledge_db, role = row
+    
+    # 将 ORM 对象转换为 Pydantic 对象，并注入 role
+    k_data = knowledge_db.model_dump()
+    k_data['role'] = role
+    
+    return KnowledgeRead(**k_data)
 
 async def get_all_knowledges(
     db: AsyncSession, 
