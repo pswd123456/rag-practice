@@ -135,7 +135,8 @@ async def handle_delete_knowledge(
     await db.commit()
 
     try:
-        await redis.enqueue_job("delete_knowledge_task", knowledge_id)
+        # [Fix] 传递 current_user.id 给 worker 任务
+        await redis.enqueue_job("delete_knowledge_task", knowledge_id, current_user.id)
     except Exception as e:
         logger.error(f"Redis Enqueue Failed: {e}")
         knowledge.status = KnowledgeStatus.FAILED

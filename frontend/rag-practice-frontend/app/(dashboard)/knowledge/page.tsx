@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Plus, MoreHorizontal, Edit2, Trash2, Database, BrainCircuit, Layers } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Plus, MoreHorizontal, Edit2, Trash2, Database, BrainCircuit, Layers, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -39,16 +40,15 @@ import { Knowledge, UserKnowledgeRole, KnowledgeStatus } from "@/lib/types";
 import { KnowledgeDialog } from "@/components/business/knowledge-dialog";
 
 export default function KnowledgePage() {
-  // State
+  const router = useRouter();
+  
   const [data, setData] = useState<Knowledge[]>([]);
   const [loading, setLoading] = useState(true);
   
-  // Dialog States
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingKb, setEditingKb] = useState<Knowledge | null>(null);
   const [deletingKb, setDeletingKb] = useState<Knowledge | null>(null);
 
-  // Fetch Data
   const fetchKnowledges = async () => {
     try {
       const res = await knowledgeService.getAll();
@@ -64,12 +64,11 @@ export default function KnowledgePage() {
     fetchKnowledges();
   }, []);
 
-  // Handlers
   const handleCreate = async (values: any) => {
     try {
       await knowledgeService.create({
         ...values,
-        chunk_overlap: 50, // Default
+        chunk_overlap: 50,
       });
       toast.success("知识库创建成功");
       fetchKnowledges();
@@ -95,8 +94,13 @@ export default function KnowledgePage() {
     if (!deletingKb) return;
     try {
       await knowledgeService.delete(deletingKb.id);
-      toast.info("删除任务已提交，状态稍后更新");
-      fetchKnowledges(); 
+      toast.info("删除任务已提交");
+      
+      // 🟢 乐观更新：立即从列表中移除，无需等待刷新
+      setData(prev => prev.filter(k => k.id !== deletingKb.id));
+      
+      // 可选：后台静默刷新以确保一致性
+      setTimeout(fetchKnowledges, 1000); 
     } catch (error) {
       toast.error("删除失败");
     } finally {
@@ -104,7 +108,10 @@ export default function KnowledgePage() {
     }
   };
 
-  // 辅助函数：角色 Badge 样式
+  const handleCardClick = (kbId: number) => {
+    router.push(`/knowledge/${kbId}`);
+  };
+
   const getRoleBadge = (role: UserKnowledgeRole) => {
     switch (role) {
       case UserKnowledgeRole.OWNER:
@@ -118,7 +125,6 @@ export default function KnowledgePage() {
     }
   };
 
-  // 辅助函数：状态显示
   const getStatusDisplay = (status: KnowledgeStatus) => {
     if (status === KnowledgeStatus.DELETING) {
       return <span className="text-red-500 flex items-center gap-1 text-xs"><span className="animate-pulse">●</span> 删除中...</span>;
@@ -129,18 +135,15 @@ export default function KnowledgePage() {
     return <span className="text-green-600 dark:text-green-400 text-xs flex items-center gap-1">● 运行正常</span>;
   };
 
-  // 辅助函数：格式化模型名称显示 (解决名称太长的问题)
   const formatModelName = (name: string) => {
     if (name === "text-embedding-v4") return "Embedding V4";
     if (name === "text-embedding-v3") return "Embedding V3";
-    // 如果有其他很长的模型名，可以在这里截断或者映射
     if (name.length > 15) return name.slice(0, 12) + "..."; 
     return name;
   };
 
   return (
     <div className="container mx-auto py-8 px-4 sm:px-6 space-y-8 max-w-7xl">
-      {/* 头部区域 */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 border-b pb-6">
         <div>
           <h2 className="text-3xl font-bold tracking-tight text-foreground">知识库管理</h2>
@@ -153,7 +156,6 @@ export default function KnowledgePage() {
         </Button>
       </div>
 
-      {/* 列表区域 */}
       {loading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {[1, 2, 3].map((i) => (
@@ -174,12 +176,16 @@ export default function KnowledgePage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
           {data.map((kb) => (
-            <Card key={kb.id} className="group relative flex flex-col justify-between overflow-hidden transition-all duration-300 hover:shadow-lg hover:border-primary/50">
+            <Card 
+              key={kb.id} 
+              className="group relative flex flex-col justify-between overflow-hidden transition-all duration-300 hover:shadow-lg hover:border-primary/50 cursor-pointer"
+              onClick={() => handleCardClick(kb.id)}
+            >
               <CardHeader className="pb-3">
                 <div className="flex justify-between items-start">
                   <div className="space-y-1.5 min-w-0 flex-1 pr-1">
                     <CardTitle 
-                      className="text-lg font-semibold leading-tight flex items-center gap-2 truncate py-0.5"
+                      className="text-lg font-semibold leading-tight flex items-center gap-2 truncate py-0.5 group-hover:text-primary transition-colors"
                       title={kb.name}
                     >
                       {kb.name}
@@ -189,19 +195,26 @@ export default function KnowledgePage() {
                     </div>
                   </div>
                   
-                  {/* 操作菜单 */}
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 -mt-1 -mr-2 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        className="h-8 w-8 -mt-1 -mr-2 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0 hover:bg-muted"
+                        onClick={(e) => e.stopPropagation()} 
+                      >
                         <MoreHorizontal className="h-4 w-4" />
                         <span className="sr-only">菜单</span>
                       </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-[160px]">
+                    <DropdownMenuContent align="end" className="w-[160px]" onClick={(e) => e.stopPropagation()}>
                       <DropdownMenuLabel>操作</DropdownMenuLabel>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem 
-                        onClick={() => setEditingKb(kb)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingKb(kb);
+                        }}
                         disabled={kb.role === UserKnowledgeRole.VIEWER || kb.status === KnowledgeStatus.DELETING}
                         className="cursor-pointer"
                       >
@@ -210,7 +223,10 @@ export default function KnowledgePage() {
                       <DropdownMenuSeparator />
                       <DropdownMenuItem 
                         className="text-destructive focus:text-destructive cursor-pointer"
-                        onClick={() => setDeletingKb(kb)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeletingKb(kb);
+                        }}
                         disabled={kb.role !== UserKnowledgeRole.OWNER || kb.status === KnowledgeStatus.DELETING}
                       >
                         <Trash2 className="mr-2 h-4 w-4" /> 删除
@@ -225,10 +241,9 @@ export default function KnowledgePage() {
                   {kb.description || "暂无描述信息"}
                 </CardDescription>
                 
-                <div className="flex items-center gap-3 text-xs text-muted-foreground bg-muted/40 p-2 rounded-md">
+                <div className="flex items-center gap-3 text-xs text-muted-foreground bg-muted/40 p-2 rounded-md group-hover:bg-muted/60 transition-colors">
                     <div className="flex items-center gap-1.5 min-w-0 flex-1" title={kb.embed_model}>
                         <BrainCircuit className="h-3.5 w-3.5 shrink-0" />
-                        {/* 使用 formatModelName 缩短显示名称，完整名称在 Tooltip 中 */}
                         <span className="truncate">{formatModelName(kb.embed_model)}</span>
                     </div>
                     <div className="w-px h-3 bg-border"></div>
@@ -239,9 +254,11 @@ export default function KnowledgePage() {
                 </div>
               </CardContent>
               
-              <CardFooter className="pt-3 border-t bg-muted/5 flex justify-between items-center h-12">
+              <CardFooter className="pt-3 border-t bg-muted/5 flex justify-between items-center h-12 group-hover:bg-muted/10 transition-colors">
                  {getStatusDisplay(kb.status)}
-                 <span className="text-[10px] text-muted-foreground">ID: {kb.id}</span>
+                 <div className="flex items-center text-xs text-muted-foreground group-hover:text-primary transition-colors">
+                    管理 <ArrowRight className="ml-1 h-3 w-3" />
+                 </div>
               </CardFooter>
             </Card>
           ))}

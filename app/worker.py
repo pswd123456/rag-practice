@@ -103,11 +103,12 @@ process_document_task.max_tries = 3 # type: ignore
 process_document_task.retry_delay = 5 # type: ignore
 process_document_task.timeout = 600 # type: ignore
 
-async def delete_knowledge_task(ctx: Any, knowledge_id: int):
-    logger.info(f"[Task] 开始删除知识库: ID {knowledge_id}")
+async def delete_knowledge_task(ctx: Any, knowledge_id: int, user_id: int):
+    logger.info(f"[Task] 开始删除知识库: ID {knowledge_id} (User: {user_id})")
     async with async_session_maker() as db:
         try:
-            await delete_knowledge_pipeline(db, knowledge_id)
+            # 透传 user_id 给 pipeline
+            await delete_knowledge_pipeline(db, knowledge_id, user_id)
         except Exception as e:
             logger.error(f"[Task] 知识库删除异常 (ID {knowledge_id}): {e}", exc_info=True)
 
