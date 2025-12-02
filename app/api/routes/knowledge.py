@@ -41,7 +41,7 @@ async def add_member_endpoint(
     knowledge_id: int,
     req: MemberAddRequest,
     db: AsyncSession = Depends(deps.get_db_session),
-    current_user: User = Depends(deps.get_current_user),
+    current_user: User = Depends(deps.get_current_active_user),
 ):
     """邀请新成员 (Owner only)"""
     return await knowledge_crud.add_member(
@@ -53,7 +53,7 @@ async def remove_member_endpoint(
     knowledge_id: int,
     user_id: int,
     db: AsyncSession = Depends(deps.get_db_session),
-    current_user: User = Depends(deps.get_current_user),
+    current_user: User = Depends(deps.get_current_active_user),
 ):
     """移除成员 (Owner only)"""
     await knowledge_crud.remove_member(db, knowledge_id, current_user.id, user_id)
@@ -63,7 +63,7 @@ async def remove_member_endpoint(
 async def get_members_endpoint(
     knowledge_id: int,
     db: AsyncSession = Depends(deps.get_db_session),
-    current_user: User = Depends(deps.get_current_user),
+    current_user: User = Depends(deps.get_current_active_user),
 ):
     """获取成员列表"""
     return await knowledge_crud.get_members(db, knowledge_id, current_user.id)
@@ -75,7 +75,7 @@ async def handle_create_knowledge(
     *,
     knowledge_in: KnowledgeCreate,
     db: AsyncSession = Depends(deps.get_db_session),
-    current_user: User = Depends(deps.get_current_user), # [New]
+    current_user: User = Depends(deps.get_current_active_user), # [New]
 ):
     """
     创建知识库 (绑定到当前用户)
@@ -85,7 +85,7 @@ async def handle_create_knowledge(
 @router.get("/knowledges", response_model=Sequence[KnowledgeRead])
 async def handle_get_all_knowledges(
     db: AsyncSession = Depends(deps.get_db_session),
-    current_user: User = Depends(deps.get_current_user), # [New]
+    current_user: User = Depends(deps.get_current_active_user), # [New]
     skip: int = 0,
     limit: int = 100,
 ):
@@ -98,7 +98,7 @@ async def handle_get_all_knowledges(
 async def handle_get_knowledge_by_id(
     knowledge_id: int,
     db: AsyncSession = Depends(deps.get_db_session),
-    current_user: User = Depends(deps.get_current_user), # [New]
+    current_user: User = Depends(deps.get_current_active_user), # [New]
 ):
     return await knowledge_crud.get_knowledge_by_id(db=db, knowledge_id=knowledge_id, user_id=current_user.id)
 
@@ -107,7 +107,7 @@ async def handle_update_knowledge(
     knowledge_id: int,
     knowledge_in: KnowledgeUpdate,
     db: AsyncSession = Depends(deps.get_db_session),
-    current_user: User = Depends(deps.get_current_user), # [New]
+    current_user: User = Depends(deps.get_current_active_user), # [New]
 ):
     return await knowledge_crud.update_knowledge(
         db=db, 
@@ -121,7 +121,7 @@ async def handle_delete_knowledge(
     knowledge_id: int,
     db: AsyncSession = Depends(deps.get_db_session),
     redis: ArqRedis = Depends(deps.get_redis_pool),
-    current_user: User = Depends(deps.get_current_user), # [New]
+    current_user: User = Depends(deps.get_current_active_user), # [New]
 ):
     """
     异步删除知识库
@@ -150,7 +150,7 @@ async def handle_delete_knowledge(
 async def handle_get_knowledge_documents(
     knowledge_id: int,
     db: AsyncSession = Depends(deps.get_db_session),
-    current_user: User = Depends(deps.get_current_user),
+    current_user: User = Depends(deps.get_current_active_user),
 ):
     # 校验 Knowledge 权限
     await knowledge_crud.get_knowledge_by_id(db, knowledge_id, current_user.id)
@@ -168,7 +168,7 @@ async def upload_file(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(deps.get_db_session),
     redis: ArqRedis = Depends(deps.get_redis_pool),
-    current_user: User = Depends(deps.get_current_user), 
+    current_user: User = Depends(deps.get_current_active_user), 
 ):
     # [RBAC Check] 只有 OWNER 或 EDITOR 可以上传
     await knowledge_crud.check_privilege(
@@ -233,7 +233,7 @@ async def upload_file(
 async def handle_delete_document(
     doc_id: int,
     db: AsyncSession = Depends(deps.get_db_session),
-    current_user: User = Depends(deps.get_current_user), # 新增当前用户依赖
+    current_user: User = Depends(deps.get_current_active_user), # 新增当前用户依赖
 ):
     """
     删除文档 (需反查 Knowledge 权限)

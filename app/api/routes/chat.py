@@ -26,7 +26,7 @@ router = APIRouter()
 async def create_chat_session(
     data: ChatSessionCreate,
     db: AsyncSession = Depends(deps.get_db_session),
-    current_user: User = Depends(deps.get_current_user)
+    current_user: User = Depends(deps.get_current_active_user)
 ):
     """创建新的对话会话"""
     # 校验 Knowledge 权限
@@ -45,7 +45,7 @@ async def get_user_sessions(
     skip: int = 0,
     limit: int = 50,
     db: AsyncSession = Depends(deps.get_db_session),
-    current_user: User = Depends(deps.get_current_user)
+    current_user: User = Depends(deps.get_current_active_user)
 ):
     """获取会话列表"""
     return await chat_service.get_user_sessions(db, current_user.id, skip, limit)
@@ -54,7 +54,7 @@ async def get_user_sessions(
 async def delete_chat_session(
     session_id: uuid.UUID,
     db: AsyncSession = Depends(deps.get_db_session),
-    current_user: User = Depends(deps.get_current_user)
+    current_user: User = Depends(deps.get_current_active_user)
 ):
     """删除会话"""
     await chat_service.delete_session(db, session_id, current_user.id)
@@ -64,7 +64,7 @@ async def delete_chat_session(
 async def get_session_messages(
     session_id: uuid.UUID,
     db: AsyncSession = Depends(deps.get_db_session),
-    current_user: User = Depends(deps.get_current_user)
+    current_user: User = Depends(deps.get_current_active_user)
 ):
     """获取历史消息"""
     return await chat_service.get_session_history(db, session_id, current_user.id)
@@ -76,7 +76,7 @@ async def chat_completion(
     session_id: uuid.UUID,
     request: ChatRequest,
     db: AsyncSession = Depends(deps.get_db_session),
-    current_user: User = Depends(deps.get_current_user),
+    current_user: User = Depends(deps.get_current_active_user),
     pipeline_factory = Depends(deps.get_rag_pipeline_factory)
 ):
     """

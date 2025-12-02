@@ -38,7 +38,7 @@ async def login_access_token(
 
 @router.post("/test-token", response_model=UserRead)
 async def test_token(
-    current_user: User = Depends(deps.get_current_user),
+    current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """
     测试 Token 有效性，返回当前用户信息
