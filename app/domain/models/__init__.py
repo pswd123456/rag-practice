@@ -2,11 +2,12 @@ from .knowledge import Knowledge, KnowledgeCreate, KnowledgeRead, KnowledgeUpdat
 from .document import Document, DocStatus
 from .testset import Testset   
 from .experiment import Experiment 
+from .user import User
 
 __all__ = [
     "Knowledge", "KnowledgeCreate", "KnowledgeRead", "KnowledgeUpdate", "KnowledgeStatus",
     "Document", "DocStatus",
-
     "Testset", 
-    "Experiment" 
+    "Experiment",
+    "User" 
 ]

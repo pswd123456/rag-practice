@@ -76,6 +76,12 @@ class Settings(BaseSettings):
     # log
     LOG_DIR: Path = PROJECT_ROOT / "logs"
 
+    # security
+    SECRET_KEY: str 
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+
+
     @field_validator("DATABASE_URL", mode="before")
     @classmethod
     def assemble_async_db_url(cls, v: str | None) -> str:
@@ -104,7 +110,7 @@ class Settings(BaseSettings):
     @computed_field
     @property
     def CHUNK_TOKENIZER_ID(self) -> str:
-        local_path = PROJECT_ROOT / "models" / "paraphrase-multilingual-MiniLM-L12-v2"
+        local_path = PROJECT_ROOT / "language_models" / "paraphrase-multilingual-MiniLM-L12-v2"
         if local_path.exists():
             return str(local_path)
         return "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"

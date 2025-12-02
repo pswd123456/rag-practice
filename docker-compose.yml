@@ -255,7 +255,7 @@ services:
     image: ghcr.io/huggingface/text-embeddings-inference:turing-1.5
     restart: always
     volumes:
-      - ./models/bge-reranker-v2-m3:/data
+      - ./language_models/bge-reranker-v2-m3:/data
     ports:
       - "8003:80"
     environment:

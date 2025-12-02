@@ -29,8 +29,7 @@ tiktoken
 dashscope
 
 
-# --- Document Processing (The New Guy) ---
-# Docling 对依赖很挑剔，不锁版本让 uv 自动适配是最好的
+# --- Document Processing---
 docling
 pypdf
 python-docx
@@ -60,3 +59,10 @@ tenacity
 rich
 pytest
 pytest_asyncio
+
+# --- Authentication & Security ---
+python-jose[cryptography]
+passlib
+bcrypt==3.2.2
+python-multipart
+email-validator
