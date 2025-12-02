@@ -257,13 +257,22 @@ async def handle_delete_document(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"删除失败: {str(e)}")
 
-# 查询单个文档详情 (用于前端轮询状态)
 @router.get("/documents/{doc_id}", response_model=Document)
 async def handle_get_document(
     doc_id: int,
     db: AsyncSession = Depends(deps.get_db_session),
+    current_user: User = Depends(deps.get_current_user), 
 ):
+ 
     doc = await db.get(Document, doc_id)
     if not doc:
         raise HTTPException(status_code=404, detail="文档不存在")
+    
+    await knowledge_crud.check_privilege(
+        db, 
+        doc.knowledge_base_id, 
+        current_user.id, 
+        [UserKnowledgeRole.OWNER, UserKnowledgeRole.EDITOR, UserKnowledgeRole.VIEWER]
+    )
+    
     return doc
