@@ -13,3 +13,45 @@ export interface UserRead {
   full_name?: string;
   is_active: boolean;
 }
+
+// === Knowledge Base Types ===
+
+export enum UserKnowledgeRole {
+  OWNER = "OWNER",
+  EDITOR = "EDITOR",
+  VIEWER = "VIEWER",
+}
+
+export enum KnowledgeStatus {
+  NORMAL = "NORMAL",
+  DELETING = "DELETING",
+  FAILED = "FAILED",
+}
+
+export interface Knowledge {
+  id: number;
+  name: string;
+  description?: string;
+  embed_model: string;
+  chunk_size: number;
+  chunk_overlap: number;
+  status: KnowledgeStatus;
+  role: UserKnowledgeRole;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface KnowledgeCreate {
+  name: string;
+  description?: string;
+  embed_model: string;
+  chunk_size: number;
+  chunk_overlap: number;
+}
+
+export interface KnowledgeUpdate {
+  name?: string;
+  description?: string;
+  embed_model?: string; // Although backend might restrict this, keeping schema consistent
+  chunk_size?: number;
+}
