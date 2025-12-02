@@ -1,0 +1,17 @@
+app/
+├── (auth)/          # 路由组：鉴权相关页面 (layout: 无侧边栏)
+│   ├── login/
+│   └── register/
+├── (dashboard)/     # 路由组：主要业务页面 (layout: 包含 Sidebar 和 Header)
+│   ├── layout.tsx   # 核心布局：侧边栏 + 顶部导航 + 鉴权保护
+│   ├── knowledge/   # 知识库管理
+│   │   ├── [id]/    # 单个知识库详情 (文档列表、设置)
+│   ├── chat/        # 对话界面
+│   └── evaluation/  # 评测看板
+lib/
+├── api.ts           # Axios/Fetch 封装 (拦截器处理 JWT)
+├── store.ts         # 全局状态管理 (推荐 Zustand)
+├── types.ts         # TypeScript 类型定义 (复用后端的 Schema)
+components/
+├── ui/              # Shadcn UI 组件 (Button, Card, Input...)
+├── business/        # 业务组件 (ChatBubble, FileUploader, KBCard...)
