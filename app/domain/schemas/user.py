@@ -13,3 +13,4 @@ class UserRead(BaseModel):
     email: EmailStr
     full_name: Optional[str] = None
     is_active: bool
+    is_superuser: bool = False # 🟢 Fix: 暴露管理员状态1

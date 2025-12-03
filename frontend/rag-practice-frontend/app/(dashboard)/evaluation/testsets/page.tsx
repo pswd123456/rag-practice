@@ -127,7 +127,8 @@ export default function TestsetsPage() {
       setKbDocuments([]); // clear previous
       form.setValue("doc_ids", []); // clear selection
       
-      knowledgeService.getDocuments(selectedKbId)
+      // [Fix] 显式转换为 Number，解决 TypeScript 类型检查错误
+      knowledgeService.getDocuments(Number(selectedKbId))
         .then(docs => setKbDocuments(docs))
         .finally(() => setLoadingDocs(false));
     }

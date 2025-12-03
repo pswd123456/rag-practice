@@ -1,7 +1,7 @@
 # app/api/routes/evaluation.py
 
 from typing import List, Dict, Any, Optional
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status # 🟢 Import status
 from sqlmodel import select, desc
 from sqlmodel.ext.asyncio.session import AsyncSession
 from arq import ArqRedis 
@@ -9,7 +9,7 @@ from arq import ArqRedis
 from app.api import deps
 from app.core.config import settings
 from app.domain.models import (
-    Testset, Experiment, Knowledge
+    Testset, Experiment, Knowledge, User # 🟢 Import User
 )
 from pydantic import BaseModel
 
@@ -36,11 +36,18 @@ class ExperimentCreateRequest(BaseModel):
 async def create_generation_task(
     req: TestsetCreateRequest,
     db: AsyncSession = Depends(deps.get_db_session),
-    redis: ArqRedis = Depends(deps.get_redis_pool), 
+    redis: ArqRedis = Depends(deps.get_redis_pool),
+    current_user: User = Depends(deps.get_current_active_user), # 🟢 Authenticate
 ):
     """
-    提交一个测试集生成任务
+    提交一个测试集生成任务 (仅限管理员)
     """
+    if not current_user.is_superuser: # 🟢 Authorization Check
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, 
+            detail="Only superusers can create testsets"
+        )
+
     testset = Testset(
         name=req.name,
         file_path="", 
@@ -52,7 +59,6 @@ async def create_generation_task(
     await db.refresh(testset)
 
     try:
-
         await redis.enqueue_job("generate_testset_task", testset.id, req.source_doc_ids, req.generator_llm)
     except Exception as e:
         await db.delete(testset)
@@ -63,7 +69,6 @@ async def create_generation_task(
 
 @router.get("/testsets", response_model=List[Testset])
 async def get_testsets(db: AsyncSession = Depends(deps.get_db_session)):
-
     result = await db.exec(select(Testset).order_by(desc(Testset.created_at)))
     return result.all()
 
@@ -72,7 +77,7 @@ async def get_testset(
     testset_id: int,
     db: AsyncSession = Depends(deps.get_db_session)
 ):
-    ts = await db.get(Testset, testset_id) # 🟢 await
+    ts = await db.get(Testset, testset_id)
     if not ts:
         raise HTTPException(status_code=404, detail="Testset not found")
     return ts
@@ -80,9 +85,12 @@ async def get_testset(
 @router.delete("/testsets/{testset_id}")
 async def delete_testset_endpoint(
     testset_id: int,
-    db: AsyncSession = Depends(deps.get_db_session)
+    db: AsyncSession = Depends(deps.get_db_session),
+    current_user: User = Depends(deps.get_current_active_user), # 🟢 Authenticate
 ):
-
+    if not current_user.is_superuser: # 🟢 Check
+        raise HTTPException(status_code=403, detail="Not authorized")
+        
     return await evaluation_crud.delete_testset(db, testset_id)
 
 # -------------------------------------------------------
@@ -94,10 +102,17 @@ async def create_experiment_task(
     req: ExperimentCreateRequest,
     db: AsyncSession = Depends(deps.get_db_session),
     redis: ArqRedis = Depends(deps.get_redis_pool), 
+    current_user: User = Depends(deps.get_current_active_user), # 🟢 Authenticate
 ):
     """
-    提交一个评测实验任务
+    提交一个评测实验任务 (仅限管理员)
     """
+    if not current_user.is_superuser: # 🟢 Authorization Check
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, 
+            detail="Only superusers can run experiments"
+        )
+
     kb = await db.get(Knowledge, req.knowledge_id)
     ts = await db.get(Testset, req.testset_id)
     if not kb or not ts:
@@ -114,7 +129,6 @@ async def create_experiment_task(
     await db.refresh(exp)
 
     try:
-
         await redis.enqueue_job("run_experiment_task", exp.id)
     except Exception as e:
         exp.status = "FAILED"
@@ -127,7 +141,7 @@ async def create_experiment_task(
 
 @router.get("/experiments", response_model=List[Experiment])
 async def get_experiments(
-    knowledge_id: Optional[int],
+    knowledge_id: Optional[int] = None,
     db: AsyncSession = Depends(deps.get_db_session)
 ):
     query = select(Experiment)
@@ -152,7 +166,10 @@ async def get_experiment(
 @router.delete("/experiments/{experiment_id}")
 async def delete_experiment_endpoint(
     experiment_id: int,
-    db: AsyncSession = Depends(deps.get_db_session)
+    db: AsyncSession = Depends(deps.get_db_session),
+    current_user: User = Depends(deps.get_current_active_user), # 🟢 Authenticate
 ):
+    if not current_user.is_superuser: # 🟢 Check
+        raise HTTPException(status_code=403, detail="Not authorized")
 
     return await evaluation_crud.delete_experiment(db, experiment_id)
