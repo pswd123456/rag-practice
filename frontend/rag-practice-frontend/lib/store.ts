@@ -1,16 +1,12 @@
 // lib/store.ts
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import { ChatSession } from './types';
+import { ChatSession, UserRead } from './types';
 import { chatService } from './services/chat';
 
 // === Auth Store ===
-interface User {
-  id: number;
-  email: string;
-  full_name?: string;
-  is_active: boolean;
-}
+// 复用 types.ts 中的 UserRead，确保一致性
+type User = UserRead; 
 
 interface AuthState {
   token: string | null;
@@ -36,7 +32,7 @@ export const useAuthStore = create<AuthState>()(
   )
 );
 
-// === Chat Store (New: Shared State for Sidebar and Pages) ===
+// === Chat Store ===
 interface ChatState {
   sessions: ChatSession[];
   isLoading: boolean;

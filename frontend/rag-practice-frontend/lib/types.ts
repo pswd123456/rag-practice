@@ -12,6 +12,7 @@ export interface UserRead {
   email: string;
   full_name?: string;
   is_active: boolean;
+  is_superuser: boolean; // [New]
 }
 
 // === Knowledge Base Types ===
@@ -100,4 +101,48 @@ export interface ChatRequest {
   llm_model?: string;
   rerank_model_name?: string;
   stream?: boolean;
+}
+
+// === Evaluation Types [New] ===
+
+export interface Testset {
+  id: number;
+  name: string;
+  description?: string;
+  file_path: string;
+  status: "PENDING" | "GENERATING" | "COMPLETED" | "FAILED";
+  error_message?: string;
+  created_at: string;
+}
+
+export interface TestsetCreate {
+  name: string;
+  source_doc_ids: number[];
+  generator_llm: string;
+}
+
+export interface Experiment {
+  id: number;
+  knowledge_id: number;
+  testset_id: number;
+  status: "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
+  error_message?: string;
+  created_at: string;
+  
+  // Metrics
+  faithfulness: number;
+  answer_relevancy: number;
+  context_recall: number;
+  context_precision: number;
+  answer_accuracy: number;
+  context_entities_recall: number;
+  
+  // Params
+  runtime_params?: Record<string, any>;
+}
+
+export interface ExperimentCreate {
+  knowledge_id: number;
+  testset_id: number;
+  runtime_params: Record<string, any>;
 }
