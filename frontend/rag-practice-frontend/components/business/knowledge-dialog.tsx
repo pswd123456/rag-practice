@@ -1,3 +1,4 @@
+// frontend/rag-practice-frontend/components/business/knowledge-dialog.tsx
 "use client";
 
 import { useEffect } from "react";
@@ -7,7 +8,6 @@ import * as z from "zod";
 import { 
   Loader2, 
   Database, 
-  FileText, 
   Settings2, 
   Cpu, 
   Layers 
@@ -51,13 +51,13 @@ const formSchema = z.object({
   chunk_size: z.coerce.number().min(100, "分块大小至少为 100").max(4096, "分块大小不能超过 4096"),
 });
 
-type FormValues = z.infer<typeof formSchema>;
+// type FormValues = z.infer<typeof formSchema>; // 不再显式使用
 
 interface KnowledgeDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   knowledge?: Knowledge | null;
-  onSubmit: (values: FormValues) => Promise<void>;
+  onSubmit: (values: z.infer<typeof formSchema>) => Promise<void>;
 }
 
 export function KnowledgeDialog({
@@ -68,7 +68,7 @@ export function KnowledgeDialog({
 }: KnowledgeDialogProps) {
   const isEdit = !!knowledge;
 
-  const form = useForm<FormValues>({
+  const form = useForm({
     resolver: zodResolver(formSchema),
     defaultValues: {
       name: "",
@@ -90,7 +90,7 @@ export function KnowledgeDialog({
     }
   }, [open, knowledge, form]);
 
-  const handleSubmit = async (values: FormValues) => {
+  const handleSubmit = async (values: z.infer<typeof formSchema>) => {
     try {
       await onSubmit(values);
       onOpenChange(false);
@@ -131,6 +131,7 @@ export function KnowledgeDialog({
                         placeholder="例如：2024年产品技术文档" 
                         className="h-10" 
                         {...field} 
+                        value={field.value as string}
                       />
                     </FormControl>
                     <FormMessage />
@@ -149,6 +150,7 @@ export function KnowledgeDialog({
                         placeholder="请输入关于此知识库的简要描述..."
                         className="resize-none min-h-[80px]"
                         {...field}
+                        value={field.value as string}
                       />
                     </FormControl>
                     <FormMessage />
@@ -182,7 +184,7 @@ export function KnowledgeDialog({
                     </FormLabel>
                     <Select
                       onValueChange={field.onChange}
-                      defaultValue={field.value}
+                      defaultValue={field.value as string}
                       disabled={isEdit} 
                     >
                       <FormControl>
@@ -204,7 +206,6 @@ export function KnowledgeDialog({
                         </SelectItem>
                       </SelectContent>
                     </Select>
-                    {/* 统一 FormDescription 高度，确保对齐 */}
                     <FormDescription className="text-[11px] min-h-[16px]">
                       {isEdit ? "创建后不可修改" : "决定语义检索的核心效果"}
                     </FormDescription>
@@ -228,6 +229,9 @@ export function KnowledgeDialog({
                           type="number" 
                           className="h-10 bg-muted/20 pr-12 transition-colors hover:bg-muted/30 hover:border-primary/50" 
                           {...field} 
+                          // [Fix] 显式转换类型，解决 Input value 类型不匹配问题
+                          value={field.value as number}
+                          onChange={(e) => field.onChange(e)}
                         />
                         <span className="absolute right-3 top-0 bottom-0 flex items-center text-xs text-muted-foreground pointer-events-none">
                           Tokens
