@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowLeft, Loader2, Settings, FileText, Users } from "lucide-react";
+import { ArrowLeft, Loader2, Settings, FileText, Users, Lock } from "lucide-react";
 import { cn } from "@/lib/utils"; 
 
 import { Button } from "@/components/ui/button";
@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/alert-dialog";
 
 import { knowledgeService, RAGDocument } from "@/lib/services/knowledge";
-import { Knowledge } from "@/lib/types";
+import { Knowledge, UserKnowledgeRole } from "@/lib/types"; // 引入 UserKnowledgeRole
 import { FileUploader } from "@/components/business/file-uploader";
 import { DocumentList } from "@/components/business/document-list";
 import { KnowledgeBasicForm, MemberManagement } from "@/components/business/knowledge-settings";
@@ -124,6 +124,9 @@ export default function KnowledgeDetailPage() {
 
   if (!knowledge) return null;
 
+  // 权限检查
+  const isViewer = knowledge.role === UserKnowledgeRole.VIEWER;
+
   return (
     <div className="container mx-auto py-6 space-y-6 max-w-6xl">
       {/* 顶部导航 */}
@@ -170,13 +173,33 @@ export default function KnowledgeDetailPage() {
                 isLoading={loading} 
               />
             </div>
+            
+            {/* 右侧上传区域：权限控制 */}
             <div className="lg:col-span-1">
               <div className="sticky top-24">
-                <h3 className="text-lg font-medium mb-4">上传新文件</h3>
-                <FileUploader 
-                  knowledgeId={id} 
-                  onUploadSuccess={fetchData} 
-                />
+                {isViewer ? (
+                  // 访客展示只读提示
+                  <div className="border border-dashed rounded-lg p-6 flex flex-col items-center justify-center text-center text-muted-foreground bg-muted/20">
+                    <div className="p-3 bg-muted rounded-full mb-3">
+                      <Lock className="h-5 w-5" />
+                    </div>
+                    <h4 className="font-medium text-foreground mb-1">权限受限</h4>
+                    <p className="text-xs">
+                      您是此知识库的<span className="font-semibold">访客</span>。
+                      <br/>
+                      仅拥有查看和检索权限，无法上传新文件。
+                    </p>
+                  </div>
+                ) : (
+                  // 非访客（OWNER/EDITOR）展示上传组件
+                  <>
+                    <h3 className="text-lg font-medium mb-4">上传新文件</h3>
+                    <FileUploader 
+                      knowledgeId={id} 
+                      onUploadSuccess={fetchData} 
+                    />
+                  </>
+                )}
               </div>
             </div>
           </div>

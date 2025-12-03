@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { toast } from "sonner";
-import { Loader2, LogIn, Command } from "lucide-react";
+import { Loader2, LogIn } from "lucide-react";
 
 import api from "@/lib/api";
 import { useAuthStore } from "@/lib/store";
@@ -20,7 +21,14 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { 
+  Card, 
+  CardContent, 
+  CardHeader, 
+  CardTitle, 
+  CardDescription,
+  CardFooter 
+} from "@/components/ui/card";
 
 // 定义表单验证规则
 const formSchema = z.object({
@@ -86,32 +94,16 @@ export default function LoginPage() {
     }
   }
 
+  // 布局修复：移除外层 div 和重复的 Logo/Header，直接返回 Card 内容
+  // 父级 layout (AuthLayout) 会处理居中和背景
   return (
-    <div className="min-h-screen flex flex-col justify-center items-center bg-gray-50 dark:bg-zinc-950 px-4">
-      {/* 顶部 Logo 或 标题区域 */}
-      <div className="mb-8 text-center">
-        <div className="flex justify-center items-center gap-2 mb-2">
-          <div className="p-2 bg-primary rounded-lg">
-            <Command className="w-6 h-6 text-primary-foreground" />
-          </div>
-          <h1 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-gray-100">
-            RAG Practice
-          </h1>
-        </div>
-        <p className="text-sm text-gray-500 dark:text-gray-400">
-          企业级知识库管理系统
-        </p>
-      </div>
-
-      {/* 登录卡片 */}
-      <Card className="w-full max-w-sm border-0 shadow-xl ring-1 ring-gray-900/5 sm:rounded-xl dark:ring-white/10 dark:bg-zinc-900/50">
-        <CardHeader className="space-y-1 pb-6">
-          <h2 className="text-xl font-semibold tracking-tight text-center">
-            欢迎回来
-          </h2>
-          <p className="text-sm text-muted-foreground text-center">
+    <>
+      <Card>
+        <CardHeader className="space-y-1">
+          <CardTitle className="text-2xl text-center">欢迎回来</CardTitle>
+          <CardDescription className="text-center">
             请输入您的账号信息以继续
-          </p>
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <Form {...form}>
@@ -125,7 +117,6 @@ export default function LoginPage() {
                     <FormControl>
                       <Input 
                         placeholder="name@example.com" 
-                        className="h-10" 
                         {...field} 
                       />
                     </FormControl>
@@ -142,7 +133,6 @@ export default function LoginPage() {
                     <FormControl>
                       <Input 
                         type="password" 
-                        className="h-10" 
                         {...field} 
                       />
                     </FormControl>
@@ -152,7 +142,7 @@ export default function LoginPage() {
               />
               <Button 
                 type="submit" 
-                className="w-full h-10 mt-2 font-medium" 
+                className="w-full" 
                 disabled={isLoading}
               >
                 {isLoading ? (
@@ -165,12 +155,23 @@ export default function LoginPage() {
             </form>
           </Form>
         </CardContent>
+        <CardFooter className="flex justify-center">
+          <p className="text-sm text-muted-foreground">
+            还没有账号?{" "}
+            <Link
+              href="/register"
+              className="text-primary hover:underline font-medium"
+            >
+              立即注册
+            </Link>
+          </p>
+        </CardFooter>
       </Card>
-
-      {/* 底部版权 */}
-      <div className="mt-8 text-center text-xs text-gray-400">
+      
+      {/* 底部版权 - 放在 Card 外部，作为 layout flex 的子元素 */}
+      <div className="text-center text-xs text-muted-foreground">
         &copy; 2025 RAG Practice. All rights reserved.
       </div>
-    </div>
+    </>
   );
 }
