@@ -51,7 +51,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Checkbox } from "@/components/ui/checkbox"; // Shadcn checkbox needed, assuming standard
+// import { Checkbox } from "@/components/ui/checkbox"; 
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
@@ -80,10 +80,13 @@ export default function TestsetsPage() {
   const [loadingDocs, setLoadingDocs] = useState(false);
 
   // Form
-  const form = useForm<z.infer<typeof formSchema>>({
+  // [Fix] 移除显式泛型 <z.infer<typeof formSchema>>
+  // 原因：zodResolver 会自动推断输入/输出类型，显式泛型会导致与 z.coerce 的输入类型冲突
+  const form = useForm({
     resolver: zodResolver(formSchema),
     defaultValues: {
       name: "",
+      // @ts-ignore - 初始值为 undefined 以便 Select 显示 placeholder，虽然 schema 要求 number
       knowledge_id: undefined,
       doc_ids: [],
       generator_llm: "qwen-max",

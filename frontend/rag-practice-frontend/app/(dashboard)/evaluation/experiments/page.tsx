@@ -84,8 +84,11 @@ export default function ExperimentsPage() {
   // Expanded Rows for Radar Chart
   const [expandedRows, setExpandedRows] = useState<number[]>([]);
 
-  // [Fix] 显式指定泛型 FormValues
-  const form = useForm<FormValues>({
+  // [Fix] 移除显式泛型 <FormValues>
+  // 原因：Zod 的 .default() 会导致 Input 类型为 optional，而 FormValues (Output) 为 required。
+  // 显式传入泛型会导致 RHF 严格匹配 Output 类型，从而与 Resolver 的 Input 类型冲突。
+  // 让 TS 自动推断即可解决。
+  const form = useForm({
     resolver: zodResolver(formSchema),
     defaultValues: {
       knowledge_id: 0, // 初始值 0，匹配 number 类型
