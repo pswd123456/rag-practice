@@ -10,6 +10,8 @@ import { Message, Source, ChatRequest, ChatSession } from "@/lib/types";
 import { MessageBubble } from "@/components/business/chat/message-bubble";
 import { ChatInput, ModelOption } from "@/components/business/chat/chat-input";
 import { ChatSettings } from "@/components/business/chat/chat-settings";
+// 🟢 引入 Store，以便在标题自动生成后更新侧边栏
+import { useChatStore } from "@/lib/store";
 
 const MODEL_OPTIONS: ModelOption[] = [
   { value: "qwen-flash", label: "Qwen Flash" },
@@ -23,6 +25,7 @@ const MODEL_OPTIONS: ModelOption[] = [
 export default function ChatSessionPage() {
   const params = useParams();
   const sessionId = params.sessionId as string;
+  const { fetchSessions } = useChatStore();
 
   const [session, setSession] = useState<ChatSession | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -86,7 +89,8 @@ export default function ChatSessionPage() {
 
     const payload: ChatRequest = {
       query: input,
-      top_k: 5,
+      // 🟢 优先使用 session 中的配置，如果没有则默认 3
+      top_k: session?.top_k || 3,
       stream: true,
       llm_model: selectedModel
     };
@@ -109,8 +113,10 @@ export default function ChatSessionPage() {
       },
       () => {
         setStreaming(false);
+        // 如果是新对话，标题可能会变，刷新本地 Session 和全局 Sidebar
         if (session?.title === "New Chat" || session?.title === "新对话") {
            refreshSessionInfo();
+           fetchSessions(); // 🟢 刷新侧边栏
         }
         setMessages((prev) => {
           const newHistory = [...prev];
@@ -166,6 +172,8 @@ export default function ChatSessionPage() {
                {session?.knowledge_ids && session.knowledge_ids.length > 1 && (
                  <span className="text-primary/80">({session.knowledge_ids.length} 知识库)</span>
                )}
+               {/* 🟢 显示 TopK 配置 */}
+               <span className="text-muted-foreground/60">· Top {session?.top_k || 3}</span>
             </div>
           </div>
         </div>

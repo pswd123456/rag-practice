@@ -5,8 +5,15 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.config import settings
 from app.domain import models
+
 # 1. 创建异步 Engine
-engine = create_async_engine(settings.DATABASE_URL, echo=False, future=True)
+# [Fix] 启用 pool_pre_ping=True 以自动处理断开的连接 (InterfaceError: connection is closed)
+engine = create_async_engine(
+    settings.DATABASE_URL, 
+    echo=False, 
+    future=True,
+    pool_pre_ping=True
+)
 
 # 2. 创建异步 Session 工厂
 async_session_maker = async_sessionmaker(

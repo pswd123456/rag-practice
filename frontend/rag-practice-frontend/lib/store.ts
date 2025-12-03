@@ -1,8 +1,10 @@
 // lib/store.ts
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
+import { ChatSession } from './types';
+import { chatService } from './services/chat';
 
-// 定义用户类型 (根据后端 app/domain/schemas/user.py)
+// === Auth Store ===
 interface User {
   id: number;
   email: string;
@@ -28,8 +30,55 @@ export const useAuthStore = create<AuthState>()(
       logout: () => set({ token: null, user: null, isAuthenticated: false }),
     }),
     {
-      name: 'auth-storage', // localStorage 中的 key 名称
+      name: 'auth-storage',
       storage: createJSONStorage(() => localStorage),
     }
   )
 );
+
+// === Chat Store (New: Shared State for Sidebar and Pages) ===
+interface ChatState {
+  sessions: ChatSession[];
+  isLoading: boolean;
+  
+  // Actions
+  fetchSessions: () => Promise<void>;
+  addSession: (session: ChatSession) => void;
+  removeSession: (sessionId: string) => void;
+  updateSessionInList: (sessionId: string, updates: Partial<ChatSession>) => void;
+}
+
+export const useChatStore = create<ChatState>((set, get) => ({
+  sessions: [],
+  isLoading: false,
+
+  fetchSessions: async () => {
+    set({ isLoading: true });
+    try {
+      const data = await chatService.getSessions();
+      set({ sessions: data });
+    } catch (error) {
+      console.error("Failed to fetch sessions:", error);
+    } finally {
+      set({ isLoading: false });
+    }
+  },
+
+  addSession: (session) => {
+    set((state) => ({ sessions: [session, ...state.sessions] }));
+  },
+
+  removeSession: (sessionId) => {
+    set((state) => ({ 
+      sessions: state.sessions.filter(s => s.id !== sessionId) 
+    }));
+  },
+
+  updateSessionInList: (sessionId, updates) => {
+    set((state) => ({
+      sessions: state.sessions.map(s => 
+        s.id === sessionId ? { ...s, ...updates } : s
+      )
+    }));
+  }
+}));

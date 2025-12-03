@@ -15,6 +15,7 @@ class ChatSessionRead(BaseModel):
     id: UUID
     title: str
     icon: str
+    top_k: int # [New]
     knowledge_id: int
     knowledge_ids: List[int]
     user_id: int
@@ -25,6 +26,7 @@ class ChatSessionUpdate(BaseModel):
     title: Optional[str] = None
     icon: Optional[str] = None
     knowledge_ids: Optional[List[int]] = None
+    top_k: Optional[int] = None # [New]
 
 # --- Message Schemas ---
 
@@ -44,11 +46,11 @@ class ChatRequest(BaseModel):
     query: str
     
     # 运行时参数 (可选覆盖默认值)
-    top_k: int = 5
+    top_k: Optional[int] = None # 如果前端不传，则使用 Session 中的 top_k
     llm_model: Optional[str] = None
     rerank_model_name: Optional[str] = None
     
-    # 流式标记 (可选，部分客户端可能喜欢显式指定)
+    # 流式标记
     stream: bool = True
 
 class ChatResponse(BaseModel):

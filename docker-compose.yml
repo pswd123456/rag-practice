@@ -261,7 +261,7 @@ services:
     environment:
       - TZ=Asia/Shanghai
     # 关键修改：增加 --dtype float16
-    command: --model-id /data --port 80 --dtype float16
+    command: --model-id /data --port 80 --dtype float16 --max-client-batch-size 64
     networks:
       - rag-net
     deploy:

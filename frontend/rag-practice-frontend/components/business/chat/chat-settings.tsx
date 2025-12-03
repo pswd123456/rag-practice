@@ -14,7 +14,8 @@ import {
   Zap, 
   BookOpen,
   Search,
-  Check
+  Check,
+  Sliders
 } from "lucide-react";
 
 import {
@@ -38,7 +39,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { Slider } from "@/components/ui/slider"; // 假设有 Slider 组件，如果没有，需要用 Input type=number 替代
 import {
   Command,
   CommandEmpty,
@@ -57,6 +58,7 @@ import { cn } from "@/lib/utils";
 import { ChatSession, Knowledge } from "@/lib/types";
 import { chatService } from "@/lib/services/chat";
 import { knowledgeService } from "@/lib/services/knowledge";
+import { useChatStore } from "@/lib/store"; // 🟢 引入
 
 // 预设图标
 const ICONS = [
@@ -70,6 +72,7 @@ const formSchema = z.object({
   title: z.string().min(1, "标题不能为空").max(50, "标题过长"),
   icon: z.string(),
   knowledge_ids: z.array(z.number()).min(1, "至少选择一个知识库"),
+  top_k: z.coerce.number().min(1).max(20), // [New] TopK 验证
 });
 
 interface ChatSettingsProps {
@@ -81,6 +84,9 @@ export function ChatSettings({ session, onUpdate }: ChatSettingsProps) {
   const [open, setOpen] = useState(false);
   const [knowledges, setKnowledges] = useState<Knowledge[]>([]);
   const [isLoadingKB, setIsLoadingKB] = useState(false);
+  
+  // 🟢 获取 Store action
+  const updateSessionInList = useChatStore(state => state.updateSessionInList);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -88,6 +94,7 @@ export function ChatSettings({ session, onUpdate }: ChatSettingsProps) {
       title: session.title,
       icon: session.icon || "message-square",
       knowledge_ids: session.knowledge_ids || [session.knowledge_id],
+      top_k: session.top_k || 3, // [New]
     },
   });
 
@@ -112,16 +119,28 @@ export function ChatSettings({ session, onUpdate }: ChatSettingsProps) {
         title: session.title,
         icon: session.icon || "message-square",
         knowledge_ids: session.knowledge_ids || [session.knowledge_id],
+        top_k: session.top_k || 3,
       });
     }
   }, [open, session, form]);
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     try {
-      await chatService.updateSession(session.id, values);
+      const updatedSession = await chatService.updateSession(session.id, values);
+      
       toast.success("设置已更新");
       setOpen(false);
-      onUpdate();
+      
+      // 1. 更新当前页面状态
+      onUpdate(); 
+      
+      // 2. 🟢 更新全局列表状态 (SideBar)
+      updateSessionInList(session.id, {
+        title: updatedSession.title,
+        icon: updatedSession.icon,
+        updated_at: updatedSession.updated_at
+      });
+      
     } catch (error) {
       toast.error("更新失败");
     }
@@ -138,7 +157,7 @@ export function ChatSettings({ session, onUpdate }: ChatSettingsProps) {
         <DialogHeader>
           <DialogTitle>会话设置</DialogTitle>
           <DialogDescription>
-            修改当前会话的标题、图标及关联的知识库。
+            修改当前会话的标题、检索参数及关联知识库。
           </DialogDescription>
         </DialogHeader>
 
@@ -192,6 +211,38 @@ export function ChatSettings({ session, onUpdate }: ChatSettingsProps) {
                 )}
               />
             </div>
+
+            {/* Top K Slider [New] */}
+            <FormField
+              control={form.control}
+              name="top_k"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="flex justify-between">
+                    <span>单次检索切片数 (Top K)</span>
+                    <span className="text-muted-foreground font-normal">{field.value}</span>
+                  </FormLabel>
+                  <FormControl>
+                    {/* 使用 Input type=number 作为简单的替代，或者如果有 Slider 组件可以使用 */}
+                    <div className="flex items-center gap-4">
+                       <Sliders className="h-4 w-4 text-muted-foreground" />
+                       <Input 
+                         type="number" 
+                         min={1} 
+                         max={20} 
+                         {...field} 
+                         className="max-w-[100px]"
+                       />
+                       <span className="text-xs text-muted-foreground">建议值: 3-5</span>
+                    </div>
+                  </FormControl>
+                  <FormDescription>
+                    每次对话时，系统将从知识库中检索相关度最高的 K 个切片作为上下文。
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
             {/* Knowledge Bases Multi-select */}
             <FormField

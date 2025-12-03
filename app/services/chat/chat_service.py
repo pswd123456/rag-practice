@@ -25,7 +25,8 @@ async def create_session(
         knowledge_id=knowledge_id,
         knowledge_ids=[knowledge_id], # 默认包含主 KB
         title=title,
-        icon=icon
+        icon=icon,
+        top_k=3 # 默认值
     )
     db.add(session)
     await db.commit()
@@ -45,6 +46,9 @@ async def update_session(
         session.title = update_data.title
     if update_data.icon is not None:
         session.icon = update_data.icon
+    if update_data.top_k is not None: # [New]
+        session.top_k = update_data.top_k
+        
     if update_data.knowledge_ids is not None:
         # 确保不为空，如果为空至少保留原本的主 KB
         if not update_data.knowledge_ids:
@@ -130,11 +134,8 @@ async def save_message(
     # 同时更新 Session 的活跃时间
     session = await db.get(ChatSession, session_id)
     if session:
-        # 简单的标题自动生成逻辑: 如果是第一条 User 消息且标题是默认值
-        # [Fix] 增加对 "新对话" 或 "New Chat" 的判断
         is_default_title = session.title in ["新对话", "New Chat"]
-        # 检查是否只有当前这一条（还没commit，所以查不到当前条，查历史为0条）
-        # 或者简化逻辑：只要是User发的第一句话且标题未改，就更新
+        # 如果是 User 第一条消息且标题未改，自动生成标题
         if role == "user" and is_default_title:
             # 截取前20字
             new_title = content.strip()[:20]
@@ -159,14 +160,12 @@ async def get_session_history(
     获取会话历史消息 (用于构建 LLM Context 或前端展示)
     返回顺序: 旧 -> 新 (符合 LLM 输入习惯)
     """
-    # 先校验权限
     await get_session_by_id(db, session_id, user_id)
     
-    # 查询消息
     statement = (
         select(Message)
         .where(Message.session_id == session_id)
-        .order_by(Message.created_at.asc()) # 正序
+        .order_by(Message.created_at.asc()) 
     )
     result = await db.exec(statement)
     messages = result.all()

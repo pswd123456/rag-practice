@@ -42,7 +42,9 @@ async def test_get_current_user_invalid_token(db_session):
     """
     with pytest.raises(HTTPException) as exc:
         await deps.get_current_user("invalid.token.string", db_session)
-    assert exc.value.status_code == status.HTTP_403_FORBIDDEN
+    
+    # [Fix] 无效 Token 应返回 401 Unauthorized，而非 403 Forbidden
+    assert exc.value.status_code == status.HTTP_401_UNAUTHORIZED
 
 @pytest.mark.asyncio
 async def test_get_current_user_not_found(db_session):

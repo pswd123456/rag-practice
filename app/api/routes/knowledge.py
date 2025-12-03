@@ -126,10 +126,23 @@ async def handle_delete_knowledge(
     """
     异步删除知识库
     """
-    # 先校验所有权
-    knowledge = await knowledge_crud.get_knowledge_by_id(db, knowledge_id, current_user.id)
+    # [Fix] 修复 UnmappedInstanceError
+    # 不能使用 get_knowledge_by_id (它返回 KnowledgeRead Pydantic Schema)
+    # 我们需要获取 ORM 对象来执行 update
     
-    # 标记状态
+    # 1. 获取数据库实体
+    knowledge = await db.get(Knowledge, knowledge_id)
+    if not knowledge:
+        raise HTTPException(status_code=404, detail="Knowledge not found")
+
+    # 2. 校验权限 (仅 OWNER 可删除)
+    # 使用 check_privilege 辅助函数
+    await knowledge_crud.check_privilege(
+        db, knowledge_id, current_user.id, 
+        [UserKnowledgeRole.OWNER]
+    )
+    
+    # 3. 标记状态
     knowledge.status = KnowledgeStatus.DELETING
     db.add(knowledge)
     await db.commit()
@@ -139,13 +152,13 @@ async def handle_delete_knowledge(
         await redis.enqueue_job("delete_knowledge_task", knowledge_id, current_user.id)
     except Exception as e:
         logger.error(f"Redis Enqueue Failed: {e}")
+        # 任务入队失败，将状态置为 FAILED 以便用户感知
         knowledge.status = KnowledgeStatus.FAILED
         db.add(knowledge)
         await db.commit()
         raise HTTPException(status_code=500, detail="任务入队失败")
 
     return {"message": f"知识库 {knowledge.name} 删除任务已提交。"}
-
 # ------------------- Document management ------------------
 @router.get("/knowledges/{knowledge_id}/documents", response_model=Sequence[Document])
 async def handle_get_knowledge_documents(

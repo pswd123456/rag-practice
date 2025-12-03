@@ -46,7 +46,8 @@ import { Label } from "@/components/ui/label";
 
 import { chatService } from "@/lib/services/chat";
 import { knowledgeService } from "@/lib/services/knowledge";
-import { ChatSession, Knowledge } from "@/lib/types";
+import { Knowledge } from "@/lib/types";
+import { useChatStore } from "@/lib/store"; // 🟢 引入全局 Store
 
 interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {}
 
@@ -64,34 +65,29 @@ export function AppSidebar({ className }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
 
-  const [sessions, setSessions] = useState<ChatSession[]>([]);
-  const [knowledges, setKnowledges] = useState<Knowledge[]>([]);
-  const [loading, setLoading] = useState(true);
+  // 🟢 使用全局 Store
+  const { sessions, isLoading: sessionsLoading, fetchSessions, addSession, removeSession } = useChatStore();
   
+  const [knowledges, setKnowledges] = useState<Knowledge[]>([]);
   const [isNewChatOpen, setIsNewChatOpen] = useState(false);
   const [selectedKbId, setSelectedKbId] = useState<string>("");
   const [creating, setCreating] = useState(false);
 
-  const fetchData = async () => {
-    try {
-      const [sessionsData, knowledgesData] = await Promise.all([
-        chatService.getSessions(),
-        knowledgeService.getAll(),
-      ]);
-      setSessions(sessionsData);
-      setKnowledges(knowledgesData);
-    } catch (error) {
-      console.error("Failed to fetch sidebar data", error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // 监听路径，如果进入了 chat 详情页，可能 title 变了，刷新一下
-  // 优化：可以使用 context 或 SWR 自动管理，这里简单处理
+  // 初始化加载
   useEffect(() => {
-    fetchData();
-  }, [pathname]);
+    fetchSessions(); // 加载会话 (Store 负责)
+    
+    // 加载知识库 (本地 State 即可，其他地方不太需要共享)
+    const loadKb = async () => {
+      try {
+        const data = await knowledgeService.getAll();
+        setKnowledges(data);
+      } catch (e) {
+        console.error(e);
+      }
+    };
+    loadKb();
+  }, []); // 只在挂载时加载一次，后续由操作触发更新
 
   const handleCreateSession = async () => {
     if (!selectedKbId) {
@@ -101,7 +97,7 @@ export function AppSidebar({ className }: SidebarProps) {
     setCreating(true);
     try {
       const session = await chatService.createSession(Number(selectedKbId));
-      setSessions([session, ...sessions]);
+      addSession(session); // 🟢 更新全局 Store
       setIsNewChatOpen(false);
       router.push(`/chat/${session.id}`);
       toast.success("新会话已创建");
@@ -120,7 +116,7 @@ export function AppSidebar({ className }: SidebarProps) {
 
     try {
       await chatService.deleteSession(id);
-      setSessions(prev => prev.filter(s => s.id !== id));
+      removeSession(id); // 🟢 更新全局 Store
       
       if (pathname === `/chat/${id}`) {
         router.push("/chat");
@@ -208,7 +204,7 @@ export function AppSidebar({ className }: SidebarProps) {
       </div>
 
       <div className="flex-1 overflow-y-auto px-3 min-h-0">
-        {loading ? (
+        {sessionsLoading && sessions.length === 0 ? (
           <div className="flex justify-center py-4">
             <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
           </div>

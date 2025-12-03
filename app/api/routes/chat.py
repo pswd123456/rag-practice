@@ -29,7 +29,6 @@ async def create_chat_session(
     current_user: User = Depends(deps.get_current_active_user)
 ):
     """创建新的对话会话"""
-    # 校验 Knowledge 权限
     await knowledge_crud.get_knowledge_by_id(db, data.knowledge_id, current_user.id)
     
     session = await chat_service.create_session(
@@ -48,8 +47,7 @@ async def update_chat_session(
     db: AsyncSession = Depends(deps.get_db_session),
     current_user: User = Depends(deps.get_current_active_user)
 ):
-    """更新会话设置 (Title, Icon, Knowledge IDs)"""
-    # 如果更新了 Knowledge IDs，需要校验权限
+    """更新会话设置 (Title, Icon, TopK, Knowledge IDs)"""
     if data.knowledge_ids:
         for kid in data.knowledge_ids:
              await knowledge_crud.get_knowledge_by_id(db, kid, current_user.id)
@@ -110,7 +108,6 @@ async def chat_completion(
     """
     核心对话接口
     """
-    # 1. 获取 Session (包含权限校验)
     session = await chat_service.get_session_by_id(db, session_id, current_user.id)
     
     # 2. 持久化用户消息
@@ -132,7 +129,6 @@ async def chat_completion(
             chat_history.append(AIMessage(content=msg.content))
     
     # 4. 初始化 Pipeline
-    # 优先使用 knowledge_ids (多库)，兼容旧数据使用 knowledge_id
     target_kb_ids = session.knowledge_ids if session.knowledge_ids else [session.knowledge_id]
     
     rag_chain = await pipeline_factory(
@@ -140,6 +136,9 @@ async def chat_completion(
         llm_model=request.llm_model,
         rerank_model_name=request.rerank_model_name
     )
+
+    # 确定 Top K: 请求参数优先，其次是会话设置，最后默认 3
+    final_top_k = request.top_k if request.top_k is not None else session.top_k
 
     # ================= Stream Mode =================
     if request.stream:
@@ -149,7 +148,7 @@ async def chat_completion(
             
             async for chunk in rag_chain.astream_with_sources(
                 request.query, 
-                top_k=request.top_k,
+                top_k=final_top_k,
                 chat_history=chat_history
             ):
                 if isinstance(chunk, list):
@@ -160,7 +159,7 @@ async def chat_completion(
                             "page": doc.metadata.get("page"),
                             "content": doc.page_content,
                             "score": doc.metadata.get("rerank_score"),
-                            "knowledge_id": doc.metadata.get("knowledge_id") # 携带库ID便于区分
+                            "knowledge_id": doc.metadata.get("knowledge_id")
                         }
                         sources_data.append(src)
                     
@@ -181,7 +180,7 @@ async def chat_completion(
     else:
         answer, docs = await rag_chain.async_query(
             request.query, 
-            top_k=request.top_k,
+            top_k=final_top_k,
             chat_history=chat_history
         )
         
