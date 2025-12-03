@@ -16,7 +16,8 @@ from app.domain.models import (
     Experiment,
     UserKnowledgeLink,
     UserKnowledgeRole,
-    User
+    User,
+    ChatSession  # 🟢 导入 ChatSession
 )
 from app.domain.schemas.knowledge_member import MemberRead
 
@@ -177,6 +178,7 @@ async def get_members(
             role=role
         ))
     return members
+
 async def create_knowledge(
     db: AsyncSession, 
     knowledge_to_create: KnowledgeCreate, 
@@ -382,7 +384,20 @@ async def delete_knowledge_pipeline(
     except Exception as e:
         logger.error(f"删除 ES 索引失败 (Resource Leak Warning): {e}")
 
-    # 6. 删除关联关系 (Link)
+    # 🟢 [Fix] 6. 删除关联的 ChatSessions (防止 IntegrityError)
+    # 由于 ChatSession 的 knowledge_id 是非空的，必须先删除会话
+    try:
+        session_stmt = select(ChatSession).where(ChatSession.knowledge_id == knowledge_id)
+        sessions = (await db.exec(session_stmt)).all()
+        for s in sessions:
+            await db.delete(s)
+        logger.info(f"已级联删除 {len(sessions)} 个关联的对话会话。")
+    except Exception as e:
+        logger.error(f"删除关联 ChatSession 失败: {e}")
+        # 如果删除会话失败，后续删除知识库本体大概率会报错，这里让异常冒泡或者记录
+        # 我们选择继续，让下面的 transaction 决定命运
+
+    # 7. 删除关联关系 (Link)
     # 虽然数据库级联可能处理，但显式删除更安全
     try:
         link_stmt = select(UserKnowledgeLink).where(UserKnowledgeLink.knowledge_id == knowledge_id)
@@ -392,7 +407,7 @@ async def delete_knowledge_pipeline(
     except Exception as e:
         logger.error(f"删除关联 Link 失败: {e}")
 
-    # 7. 删除知识库本体
+    # 8. 删除知识库本体
     try:
         await db.delete(knowledge)
         await db.commit()

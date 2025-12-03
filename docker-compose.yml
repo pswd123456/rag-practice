@@ -26,10 +26,15 @@ services:
   redis:
     image: redis:latest
     restart: always
+    # [新增] 开启 AOF 持久化
+    command: redis-server --appendonly yes
     networks:
       - rag-net
     ports:
       - "6379:6379"
+    # [新增] 数据卷挂载
+    volumes:
+      - redis_data:/data
 
   minio:
     image: minio/minio
@@ -392,6 +397,7 @@ volumes:
   clickhouse_data:
   clickhouse_log:
   model_cache:
+  redis_data:
 
 networks:
   rag-net:
