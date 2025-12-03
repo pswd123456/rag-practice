@@ -48,13 +48,20 @@ async def get_current_user(
         )
         token_data = TokenPayload(**payload)
     except (JWTError, ValidationError):
+        # [Fix] 之前返回 403 导致前端拦截器无法识别过期状态
+        # 根据 HTTP 规范，凭证无效/过期应返回 401 Unauthorized
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
+            status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
         )
     
     if token_data.sub is None:
-        raise HTTPException(status_code=404, detail="User identifier not found in token")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, 
+            detail="User identifier not found in token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     # 根据 sub (这里存的是 user_id) 查询用户
     user = await db.get(User, int(token_data.sub))
