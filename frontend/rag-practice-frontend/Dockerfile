@@ -9,9 +9,15 @@ WORKDIR /app
 
 # Install dependencies based on the preferred package manager
 COPY package.json package-lock.json* ./
+
+# [Fix] 使用 npm install 代替 npm ci
+# npm ci 严格依赖 package-lock.json，如果 package.json 变更（如新增依赖）但 lock 文件未更新，会导致构建失败。
+# 改用 npm install 可以自动根据 package.json 更新依赖关系。
 RUN \
-  if [ -f package-lock.json ]; then npm ci; \
-  else echo "Lockfile not found." && exit 1; \
+  if [ -f package-lock.json ]; then \
+    npm ci || npm install; \
+  else \
+    npm install; \
   fi
 
 # 2. Rebuild the source code only when needed

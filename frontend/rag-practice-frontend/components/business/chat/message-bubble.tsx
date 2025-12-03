@@ -1,5 +1,10 @@
 import { useState } from "react";
-import ReactMarkdown from "react-markdown"; // 假设用户已安装
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import "katex/dist/katex.min.css"; // 引入 Katex 样式
+
 import { Bot, User, FileText, ChevronDown, ChevronRight, Copy, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Message, Source } from "@/lib/types";
@@ -43,7 +48,6 @@ export function MessageBubble({ message }: MessageBubbleProps) {
         {/* Name & Time */}
         <div className={cn("flex items-center gap-2 text-xs text-muted-foreground", isUser && "flex-row-reverse")}>
           <span className="font-semibold">{isUser ? "You" : "RAG Assistant"}</span>
-          {/* <span>{message.created_at ? format(new Date(message.created_at), "HH:mm") : ""}</span> */}
         </div>
 
         {/* Message Body */}
@@ -52,6 +56,8 @@ export function MessageBubble({ message }: MessageBubbleProps) {
             <div className="whitespace-pre-wrap">{message.content}</div>
           ) : (
             <ReactMarkdown
+              remarkPlugins={[remarkGfm, remarkMath]}
+              rehypePlugins={[rehypeKatex]}
               components={{
                 // 自定义 Markdown 渲染以适配 Shadcn 风格
                 p: ({ children }) => <p className="mb-2 last:mb-0 leading-7">{children}</p>,
@@ -141,7 +147,6 @@ function SourceItem({ source, index }: { source: Source; index: number }) {
         </div>
       </div>
       
-      {/* 始终渲染内容，通过 CSS 控制显示，或者条件渲染 */}
       {expanded && (
         <div className="mt-2 border-t pt-2 text-muted-foreground/80 leading-relaxed bg-muted/10 p-1.5 rounded">
           {source.content}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ArrowLeft, Loader2, Settings, FileText, Users, Lock } from "lucide-react";
@@ -36,27 +36,25 @@ export default function KnowledgeDetailPage() {
   const [loading, setLoading] = useState(true);
   const [deleteDoc, setDeleteDoc] = useState<RAGDocument | null>(null);
   
-  // 轮询控制
-  const pollingRef = useRef<NodeJS.Timeout | null>(null);
-
-  const fetchData = async () => {
+  // 获取数据
+  const fetchData = useCallback(async (showLoading = false) => {
+    if (showLoading) setLoading(true);
     try {
+      // 并行请求：获取详情和文档列表
       const [kbData, docsData] = await Promise.all([
         knowledgeService.getById(id),
         knowledgeService.getDocuments(id),
       ]);
       setKnowledge(kbData);
       setDocuments(docsData);
-      return docsData;
     } catch (error) {
       console.error(error);
       toast.error("加载失败，请检查网络或权限");
-      router.push("/knowledge"); // 回退
-      return [];
+      router.push("/knowledge");
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
-  };
+  }, [id, router]);
 
   // 刷新知识库基本信息（当修改名称/描述后调用）
   const refreshInfo = async () => {
@@ -70,33 +68,36 @@ export default function KnowledgeDetailPage() {
 
   // 初始化加载
   useEffect(() => {
-    if (!id) return;
-    fetchData();
-  }, [id]);
+    if (id) {
+      fetchData(true);
+    }
+  }, [id, fetchData]);
 
-  // 轮询逻辑
+  // 轮询逻辑：当有文档处于 PENDING 或 PROCESSING 状态时，每 3 秒刷新一次
   useEffect(() => {
-    const checkStatus = async () => {
+    const hasProcessing = documents.some(
+      (d) => d.status === "PROCESSING" || d.status === "PENDING"
+    );
+
+    if (!hasProcessing) return;
+
+    console.log("检测到正在处理的文档，启动轮询...");
+    const timer = setInterval(async () => {
       try {
         const docs = await knowledgeService.getDocuments(id);
+        
+        // 简单比对是否需要更新，避免无效渲染
+        // 这里简单地直接更新，React 会处理 Diff
         setDocuments(docs);
-        const hasProcessing = docs.some(d => d.status === "PROCESSING" || d.status === "PENDING");
-        if (!hasProcessing && pollingRef.current) {
-          clearInterval(pollingRef.current);
-          pollingRef.current = null;
-        }
+        
+        // 如果所有文档都处理完毕，下次 Effect 执行时会清除定时器
       } catch (e) {
         console.error("Polling error", e);
       }
-    };
-
-    const hasProcessing = documents.some(d => d.status === "PROCESSING" || d.status === "PENDING");
-    if (hasProcessing && !pollingRef.current) {
-      pollingRef.current = setInterval(checkStatus, 3000);
-    }
+    }, 3000);
 
     return () => {
-      if (pollingRef.current) clearInterval(pollingRef.current);
+      clearInterval(timer);
     };
   }, [documents, id]);
 
@@ -162,15 +163,15 @@ export default function KnowledgeDetailPage() {
             <div className="lg:col-span-2 space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-medium">已收录文档 ({documents.length})</h3>
-                <Button variant="outline" size="sm" onClick={() => fetchData()}>
-                  <Loader2 className={cn("h-3 w-3 mr-2", pollingRef.current && "animate-spin")} /> 
+                <Button variant="outline" size="sm" onClick={() => fetchData(false)}>
+                  <Loader2 className={cn("h-3 w-3 mr-2", false && "animate-spin")} /> 
                   刷新
                 </Button>
               </div>
               <DocumentList 
                 documents={documents} 
                 onDelete={setDeleteDoc} 
-                isLoading={loading} 
+                isLoading={false} 
               />
             </div>
             
@@ -196,7 +197,7 @@ export default function KnowledgeDetailPage() {
                     <h3 className="text-lg font-medium mb-4">上传新文件</h3>
                     <FileUploader 
                       knowledgeId={id} 
-                      onUploadSuccess={fetchData} 
+                      onUploadSuccess={() => fetchData(false)} 
                     />
                   </>
                 )}
