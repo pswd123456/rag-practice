@@ -61,10 +61,18 @@ export interface KnowledgeUpdate {
 export interface ChatSession {
   id: string; // UUID
   title: string;
+  icon: string; // [New]
   knowledge_id: number;
+  knowledge_ids: number[]; // [New]
   user_id: number;
   created_at: string;
   updated_at: string;
+}
+
+export interface ChatSessionUpdate {
+  title?: string;
+  icon?: string;
+  knowledge_ids?: number[];
 }
 
 export interface Source {
@@ -72,6 +80,7 @@ export interface Source {
   page?: number;
   content: string;
   score?: number;
+  knowledge_id?: number;
 }
 
 export interface Message {

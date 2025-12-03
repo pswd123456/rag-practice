@@ -1,16 +1,16 @@
-// frontend/rag-practice-frontend/app/(dashboard)/layout.tsx
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { Menu } from "lucide-react";
 
 import { AppSidebar } from "@/components/business/app-sidebar";
 import { UserNav } from "@/components/business/user-nav";
-import { ModeToggle } from "@/components/business/mode-toggle"; // 🟢 引入
+import { ModeToggle } from "@/components/business/mode-toggle";
 import { useAuthStore } from "@/lib/store";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 export default function DashboardLayout({
   children,
@@ -18,6 +18,7 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
   const { isAuthenticated } = useAuthStore();
   const [isClient, setIsClient] = useState(false);
 
@@ -34,18 +35,20 @@ export default function DashboardLayout({
   if (!isClient) return null;
   if (!isAuthenticated) return null;
 
+  // 检查是否为聊天页面
+  const isChatPage = pathname?.startsWith("/chat");
+
   return (
-    <div className="flex min-h-screen flex-col md:flex-row bg-background">
+    <div className="flex h-screen overflow-hidden bg-background">
       {/* --- Desktop Sidebar --- */}
-      <aside className="hidden w-64 flex-col md:flex fixed inset-y-0 z-50">
+      <aside className="hidden w-64 flex-col border-r md:flex bg-zinc-50/40 dark:bg-zinc-900/40">
         <AppSidebar />
       </aside>
 
-      {/* --- Mobile Header & Content --- */}
-      <div className="flex-1 md:ml-64 flex flex-col min-h-screen">
+      {/* --- Mobile & Main Content --- */}
+      <div className="flex flex-1 flex-col overflow-hidden">
         {/* Header */}
-        <header className="sticky top-0 z-40 flex h-16 items-center gap-4 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-6 shadow-sm">
-          {/* Mobile Sidebar Trigger */}
+        <header className="flex h-14 items-center gap-4 border-b bg-background/95 backdrop-blur px-6 shrink-0 z-50">
           <Sheet>
             <SheetTrigger asChild>
               <Button variant="outline" size="icon" className="md:hidden shrink-0">
@@ -59,17 +62,27 @@ export default function DashboardLayout({
           </Sheet>
 
           <div className="flex-1">
-            {/* Title / Breadcrumbs */}
+            {/* Breadcrumb place holder */}
           </div>
 
           <div className="flex items-center gap-2">
-            <ModeToggle /> {/* 🟢 添加切换按钮 */}
+            <ModeToggle />
             <UserNav />
           </div>
         </header>
 
         {/* Main Content Area */}
-        <main className="flex-1 p-6 md:p-8 bg-zinc-50/50 dark:bg-zinc-950/50">
+        {/* 修复双重滚动条的关键：
+            1. 外层 flex-1 overflow-hidden 防止 body 滚动。
+            2. 聊天页面 (isChatPage) 不需要 padding 和自身的 overflow-y，由内部组件处理。
+            3. 其他页面 (Knowledge等) 保持 padding 和 overflow-y-auto。
+        */}
+        <main 
+          className={cn(
+            "flex-1 overflow-hidden relative",
+            !isChatPage && "overflow-y-auto p-6 md:p-8 bg-zinc-50/50 dark:bg-zinc-950/50"
+          )}
+        >
           {children}
         </main>
       </div>

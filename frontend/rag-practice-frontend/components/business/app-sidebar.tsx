@@ -7,6 +7,8 @@ import {
   BookOpen, 
   BarChart2, 
   MessageSquare, 
+  Bot,
+  Zap,
   Plus, 
   Trash2, 
   MoreHorizontal,
@@ -18,7 +20,6 @@ import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area"; // 假设有，如果没有可以使用 div + overflow-auto
 import { Separator } from "@/components/ui/separator";
 import {
   Dialog,
@@ -49,21 +50,28 @@ import { ChatSession, Knowledge } from "@/lib/types";
 
 interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {}
 
+// Icon Mapping helper
+const getSessionIcon = (iconName: string) => {
+  switch (iconName) {
+    case "bot": return Bot;
+    case "zap": return Zap;
+    case "book-open": return BookOpen;
+    default: return MessageSquare;
+  }
+};
+
 export function AppSidebar({ className }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
 
-  // === State ===
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [knowledges, setKnowledges] = useState<Knowledge[]>([]);
   const [loading, setLoading] = useState(true);
   
-  // Dialog State
   const [isNewChatOpen, setIsNewChatOpen] = useState(false);
   const [selectedKbId, setSelectedKbId] = useState<string>("");
   const [creating, setCreating] = useState(false);
 
-  // === Data Fetching ===
   const fetchData = async () => {
     try {
       const [sessionsData, knowledgesData] = await Promise.all([
@@ -79,13 +87,12 @@ export function AppSidebar({ className }: SidebarProps) {
     }
   };
 
-  // 监听路径变化，如果是在 chat 页面且 ID 变了，可能需要刷新列表（可选，视后端更新机制而定）
-  // 这里简化为组件挂载时加载一次，后续操作手动更新状态
+  // 监听路径，如果进入了 chat 详情页，可能 title 变了，刷新一下
+  // 优化：可以使用 context 或 SWR 自动管理，这里简单处理
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [pathname]);
 
-  // === Actions ===
   const handleCreateSession = async () => {
     if (!selectedKbId) {
       toast.error("请选择一个知识库");
@@ -94,7 +101,7 @@ export function AppSidebar({ className }: SidebarProps) {
     setCreating(true);
     try {
       const session = await chatService.createSession(Number(selectedKbId));
-      setSessions([session, ...sessions]); // 乐观更新
+      setSessions([session, ...sessions]);
       setIsNewChatOpen(false);
       router.push(`/chat/${session.id}`);
       toast.success("新会话已创建");
@@ -109,14 +116,12 @@ export function AppSidebar({ className }: SidebarProps) {
     e.preventDefault();
     e.stopPropagation();
     
-    // 简单的确认 (生产环境可以用 AlertDialog)
     if (!confirm("确定要删除此会话吗？")) return;
 
     try {
       await chatService.deleteSession(id);
       setSessions(prev => prev.filter(s => s.id !== id));
       
-      // 如果当前正在浏览该会话，跳转到 chat 首页
       if (pathname === `/chat/${id}`) {
         router.push("/chat");
       }
@@ -126,26 +131,14 @@ export function AppSidebar({ className }: SidebarProps) {
     }
   };
 
-  // === Static Nav Items ===
   const staticNavItems = [
-    {
-      title: "知识库管理",
-      href: "/knowledge",
-      icon: BookOpen,
-      match: "/knowledge",
-    },
-    {
-      title: "评测看板",
-      href: "/evaluation",
-      icon: BarChart2,
-      match: "/evaluation",
-    },
+    { title: "知识库管理", href: "/knowledge", icon: BookOpen, match: "/knowledge" },
+    { title: "评测看板", href: "/evaluation", icon: BarChart2, match: "/evaluation" },
   ];
 
   return (
     <div className={cn("flex flex-col h-full border-r bg-zinc-50/40 dark:bg-zinc-900/40", className)}>
       
-      {/* 1. Header & Logo */}
       <div className="px-6 py-4 flex items-center h-16 shrink-0">
         <div className="mr-2 h-6 w-6 bg-primary rounded-md flex items-center justify-center text-primary-foreground font-bold text-xs">
           RP
@@ -153,7 +146,6 @@ export function AppSidebar({ className }: SidebarProps) {
         <h2 className="text-lg font-semibold tracking-tight">RAG Practice</h2>
       </div>
 
-      {/* 2. Static Navigation */}
       <div className="px-3 space-y-1 shrink-0">
         {staticNavItems.map((item) => (
           <Button
@@ -172,7 +164,6 @@ export function AppSidebar({ className }: SidebarProps) {
 
       <Separator className="my-4" />
 
-      {/* 3. Chat Section Header */}
       <div className="px-4 flex items-center justify-between shrink-0 mb-2">
         <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
           对话列表
@@ -190,10 +181,10 @@ export function AppSidebar({ className }: SidebarProps) {
             </DialogHeader>
             <div className="grid gap-4 py-4">
               <div className="grid gap-2">
-                <Label>选择知识库</Label>
+                <Label>默认知识库</Label>
                 <Select onValueChange={setSelectedKbId} value={selectedKbId}>
                   <SelectTrigger>
-                    <SelectValue placeholder="选择一个知识库..." />
+                    <SelectValue placeholder="选择初始知识库..." />
                   </SelectTrigger>
                   <SelectContent>
                     {knowledges.map((kb) => (
@@ -203,6 +194,7 @@ export function AppSidebar({ className }: SidebarProps) {
                     ))}
                   </SelectContent>
                 </Select>
+                <p className="text-xs text-muted-foreground">创建后可在设置中添加更多知识库。</p>
               </div>
             </div>
             <DialogFooter>
@@ -215,7 +207,6 @@ export function AppSidebar({ className }: SidebarProps) {
         </Dialog>
       </div>
 
-      {/* 4. Chat Session List (Scrollable) */}
       <div className="flex-1 overflow-y-auto px-3 min-h-0">
         {loading ? (
           <div className="flex justify-center py-4">
@@ -233,6 +224,8 @@ export function AppSidebar({ className }: SidebarProps) {
           <div className="space-y-1 pb-4">
             {sessions.map((session) => {
               const isActive = pathname === `/chat/${session.id}`;
+              const Icon = getSessionIcon(session.icon || "message-square");
+              
               return (
                 <Link
                   key={session.id}
@@ -244,7 +237,7 @@ export function AppSidebar({ className }: SidebarProps) {
                       : "text-muted-foreground hover:bg-muted hover:text-foreground"
                   )}
                 >
-                  <MessageSquare className="h-4 w-4 shrink-0" />
+                  <Icon className="h-4 w-4 shrink-0" />
                   <div className="flex-1 truncate text-left pr-6">
                     <div className="truncate">{session.title || "新对话"}</div>
                     <div className="text-[10px] opacity-60 font-normal truncate">
@@ -252,7 +245,6 @@ export function AppSidebar({ className }: SidebarProps) {
                     </div>
                   </div>
                   
-                  {/* Delete Button (Visible on Hover or Active) */}
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button
@@ -260,9 +252,9 @@ export function AppSidebar({ className }: SidebarProps) {
                         size="icon"
                         className={cn(
                           "h-6 w-6 absolute right-2 opacity-0 group-hover:opacity-100 transition-opacity",
-                          isActive && "opacity-100" // 选中时常驻
+                          isActive && "opacity-100"
                         )}
-                        onClick={(e) => e.stopPropagation()} // 防止触发 Link 跳转
+                        onClick={(e) => e.stopPropagation()}
                       >
                         <MoreHorizontal className="h-3 w-3" />
                       </Button>
@@ -282,8 +274,6 @@ export function AppSidebar({ className }: SidebarProps) {
           </div>
         )}
       </div>
-      
-      {/* 底部留白或用户信息区域已经在 Layout 中处理 */}
     </div>
   );
 }

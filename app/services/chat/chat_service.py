@@ -8,6 +8,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from fastapi import HTTPException
 
 from app.domain.models import ChatSession, Message
+from app.domain.schemas.chat import ChatSessionUpdate
 
 logger = logging.getLogger(__name__)
 
@@ -15,14 +16,45 @@ async def create_session(
     db: AsyncSession, 
     user_id: int, 
     knowledge_id: int, 
-    title: str = "新对话"
+    title: str = "新对话",
+    icon: str = "message-square"
 ) -> ChatSession:
     """创建新的对话会话"""
     session = ChatSession(
         user_id=user_id,
         knowledge_id=knowledge_id,
-        title=title
+        knowledge_ids=[knowledge_id], # 默认包含主 KB
+        title=title,
+        icon=icon
     )
+    db.add(session)
+    await db.commit()
+    await db.refresh(session)
+    return session
+
+async def update_session(
+    db: AsyncSession,
+    session_id: uuid.UUID,
+    user_id: int,
+    update_data: ChatSessionUpdate
+) -> ChatSession:
+    """更新会话设置"""
+    session = await get_session_by_id(db, session_id, user_id)
+    
+    if update_data.title is not None:
+        session.title = update_data.title
+    if update_data.icon is not None:
+        session.icon = update_data.icon
+    if update_data.knowledge_ids is not None:
+        # 确保不为空，如果为空至少保留原本的主 KB
+        if not update_data.knowledge_ids:
+             session.knowledge_ids = [session.knowledge_id]
+        else:
+             session.knowledge_ids = update_data.knowledge_ids
+             # 如果原来的主ID不在新列表中，更新主ID为新列表的第一个 (保持数据一致性)
+             if session.knowledge_id not in update_data.knowledge_ids:
+                 session.knowledge_id = update_data.knowledge_ids[0]
+
     db.add(session)
     await db.commit()
     await db.refresh(session)
@@ -61,6 +93,13 @@ async def get_session_by_id(
     session = result.first()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
+    
+    # 数据迁移兼容：如果 knowledge_ids 为空，用 knowledge_id 填充
+    if not session.knowledge_ids:
+        session.knowledge_ids = [session.knowledge_id]
+        db.add(session)
+        await db.commit()
+        
     return session
 
 async def delete_session(db: AsyncSession, session_id: uuid.UUID, user_id: int):
@@ -92,8 +131,16 @@ async def save_message(
     session = await db.get(ChatSession, session_id)
     if session:
         # 简单的标题自动生成逻辑: 如果是第一条 User 消息且标题是默认值
-        if role == "user" and session.title == "新对话":
-            session.title = content[:20] # 截取前20字作为标题
+        # [Fix] 增加对 "新对话" 或 "New Chat" 的判断
+        is_default_title = session.title in ["新对话", "New Chat"]
+        # 检查是否只有当前这一条（还没commit，所以查不到当前条，查历史为0条）
+        # 或者简化逻辑：只要是User发的第一句话且标题未改，就更新
+        if role == "user" and is_default_title:
+            # 截取前20字
+            new_title = content.strip()[:20]
+            if len(content) > 20:
+                new_title += "..."
+            session.title = new_title
         
         session.updated_at = message.created_at
         db.add(session)
@@ -120,14 +167,8 @@ async def get_session_history(
         select(Message)
         .where(Message.session_id == session_id)
         .order_by(Message.created_at.asc()) # 正序
-        # 如果需要限制条数，通常取最近的 N 条，但这需要先倒序再正序，这里简化为全量或直接正序
-        # .limit(limit) 
     )
     result = await db.exec(statement)
     messages = result.all()
-    
-    # 如果加上了 limit, 比如 limit=10, 且直接 .limit(10), 会得到"最早"的10条。
-    # 实际场景通常需要"最近"的10条。
-    # 为了简化，假设 history 长度可控，暂不复杂的 Subquery。
     
     return messages

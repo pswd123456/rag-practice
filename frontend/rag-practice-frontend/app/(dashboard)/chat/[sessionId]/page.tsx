@@ -6,97 +6,112 @@ import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 
 import { chatService } from "@/lib/services/chat";
-import { Message, Source, ChatRequest } from "@/lib/types";
+import { Message, Source, ChatRequest, ChatSession } from "@/lib/types";
 import { MessageBubble } from "@/components/business/chat/message-bubble";
-import { ChatInput } from "@/components/business/chat/chat-input";
-import { ScrollArea } from "@/components/ui/scroll-area"; // 假设有，如果没有可以用 div
+import { ChatInput, ModelOption } from "@/components/business/chat/chat-input";
+import { ChatSettings } from "@/components/business/chat/chat-settings";
+
+const MODEL_OPTIONS: ModelOption[] = [
+  { value: "qwen-flash", label: "Qwen Flash" },
+  { value: "qwen-plus", label: "Qwen Plus" },
+  { value: "qwen-max", label: "Qwen Max" },
+  { value: "deepseek-chat", label: "DeepSeek V3" },
+  { value: "deepseek-reasoner", label: "DeepSeek R1" },
+  { value: "google/gemini-3-pro-preview-free", label: "Gemini Pro" },
+];
 
 export default function ChatSessionPage() {
   const params = useParams();
   const sessionId = params.sessionId as string;
 
+  const [session, setSession] = useState<ChatSession | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [loadingInitial, setLoadingInitial] = useState(true);
   const [streaming, setStreaming] = useState(false);
   
-  // 滚动锚点
+  // Chat Settings
+  const [selectedModel, setSelectedModel] = useState("qwen-max");
+  
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // 初始化加载历史记录
   useEffect(() => {
     if (sessionId) {
-      loadHistory();
+      initSession();
     }
   }, [sessionId]);
 
-  // 自动滚动到底部
+  // 自动滚动
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollIntoView({ behavior: "smooth" });
     }
   }, [messages, streaming]);
 
-  const loadHistory = async () => {
+  const initSession = async () => {
     setLoadingInitial(true);
     try {
-      const history = await chatService.getHistory(sessionId);
-      setMessages(history);
+      const [sessData, histData] = await Promise.all([
+        chatService.getSession(sessionId),
+        chatService.getHistory(sessionId)
+      ]);
+      setSession(sessData);
+      setMessages(histData);
     } catch (error) {
       console.error(error);
-      toast.error("加载历史消息失败");
+      toast.error("加载会话失败");
     } finally {
       setLoadingInitial(false);
     }
   };
 
+  const refreshSessionInfo = async () => {
+    try {
+      const data = await chatService.getSession(sessionId);
+      setSession(data);
+    } catch(e) {}
+  };
+
   const handleSendMessage = async (input: string) => {
-    // 1. 乐观更新用户消息
     const userMsg: Message = { role: "user", content: input };
     setMessages((prev) => [...prev, userMsg]);
     setStreaming(true);
 
-    // 2. 准备 Assistant 消息占位符
     let assistantMsgContent = "";
     let assistantSources: Source[] = [];
     
-    // 插入一个空的 Assistant 消息用于流式渲染
     setMessages((prev) => [
       ...prev,
       { role: "assistant", content: "", isStreaming: true },
     ]);
 
-    // 3. 构建请求
     const payload: ChatRequest = {
       query: input,
-      top_k: 5, // 默认配置，也可以从设置中读取
+      top_k: 5,
       stream: true,
+      llm_model: selectedModel
     };
 
-    // 4. 调用流式服务
     await chatService.sendMessageStream(
       sessionId,
       payload,
-      // onMessage
       (chunk) => {
         assistantMsgContent += chunk;
         updateLastMessage(assistantMsgContent, assistantSources);
       },
-      // onSources
       (sources) => {
         assistantSources = sources;
         updateLastMessage(assistantMsgContent, assistantSources);
       },
-      // onError
       (err) => {
         toast.error("回复生成失败");
         setStreaming(false);
-        // 移除最后一条错误的 loading 消息
         setMessages((prev) => prev.slice(0, -1));
       },
-      // onFinish
       () => {
         setStreaming(false);
-        // 更新最后一条消息状态为完成
+        if (session?.title === "New Chat" || session?.title === "新对话") {
+           refreshSessionInfo();
+        }
         setMessages((prev) => {
           const newHistory = [...prev];
           const lastMsg = newHistory[newHistory.length - 1];
@@ -109,12 +124,10 @@ export default function ChatSessionPage() {
     );
   };
 
-  // 辅助函数：更新消息列表中的最后一条 (Assistant)
   const updateLastMessage = (content: string, sources?: Source[]) => {
     setMessages((prev) => {
       const newHistory = [...prev];
       const lastIndex = newHistory.length - 1;
-      // 确保修改的是最后一条 Assistant 消息
       if (lastIndex >= 0 && newHistory[lastIndex].role === "assistant") {
         newHistory[lastIndex] = {
           ...newHistory[lastIndex],
@@ -127,8 +140,6 @@ export default function ChatSessionPage() {
   };
 
   const handleStop = () => {
-    // 简单实现：仅前端停止接收，实际上无法中断 Fetch 请求 (需要 AbortController)
-    // 这里为了演示，简化为停止状态更新
     setStreaming(false);
     toast.info("已停止生成");
   };
@@ -142,30 +153,55 @@ export default function ChatSessionPage() {
   }
 
   return (
-    <div className="relative flex flex-col h-full">
-      {/* 消息列表区域 */}
+    <div className="relative flex flex-col h-full bg-zinc-50/50 dark:bg-zinc-950/50">
+      {/* Simplified Header Bar 
+          移除了这里的 Select，只保留标题和设置按钮
+      */}
+      <div className="flex items-center justify-between px-6 py-2 border-b bg-background/80 backdrop-blur-sm sticky top-0 z-10 h-14">
+        <div className="flex items-center gap-4">
+          <div>
+            <h2 className="text-sm font-semibold">{session?.title}</h2>
+            <div className="text-[10px] text-muted-foreground flex gap-2">
+               <span>{messages.length} 消息</span>
+               {session?.knowledge_ids && session.knowledge_ids.length > 1 && (
+                 <span className="text-primary/80">({session.knowledge_ids.length} 知识库)</span>
+               )}
+            </div>
+          </div>
+        </div>
+
+        <div>
+          {/* Settings Trigger */}
+          {session && <ChatSettings session={session} onUpdate={refreshSessionInfo} />}
+        </div>
+      </div>
+
+      {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 md:p-6 scroll-smooth">
         <div className="mx-auto max-w-3xl space-y-6">
           {messages.length === 0 ? (
             <div className="text-center text-muted-foreground py-20">
-              开始一个新的话题吧...
+              <div className="mb-4 text-4xl">👋</div>
+              <p>开始一个新的话题吧...</p>
             </div>
           ) : (
             messages.map((msg, index) => (
               <MessageBubble key={index} message={msg} />
             ))
           )}
-          {/* 底部锚点 */}
           <div ref={scrollRef} className="h-px w-full" />
         </div>
       </div>
 
-      {/* 底部输入框 */}
-      <div className="sticky bottom-0 bg-background/80 backdrop-blur-sm border-t pt-2">
+      {/* Input Area - 包含模型选择器 */}
+      <div className="sticky bottom-0 bg-background/80 backdrop-blur-sm border-t pt-2 pb-4">
         <ChatInput 
           isLoading={streaming} 
           onSend={handleSendMessage} 
-          onStop={handleStop} 
+          onStop={handleStop}
+          selectedModel={selectedModel}
+          onModelChange={setSelectedModel}
+          modelOptions={MODEL_OPTIONS}
         />
       </div>
     </div>

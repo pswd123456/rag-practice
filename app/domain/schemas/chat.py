@@ -9,17 +9,22 @@ from pydantic import BaseModel
 class ChatSessionCreate(BaseModel):
     knowledge_id: int
     title: Optional[str] = "New Chat"
+    icon: Optional[str] = "message-square"
 
 class ChatSessionRead(BaseModel):
     id: UUID
     title: str
+    icon: str
     knowledge_id: int
+    knowledge_ids: List[int]
     user_id: int
     created_at: datetime
     updated_at: datetime
 
 class ChatSessionUpdate(BaseModel):
-    title: str
+    title: Optional[str] = None
+    icon: Optional[str] = None
+    knowledge_ids: Optional[List[int]] = None
 
 # --- Message Schemas ---
 

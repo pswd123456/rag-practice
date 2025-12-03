@@ -2,7 +2,7 @@
 import uuid
 from datetime import datetime
 from typing import List, Optional, Dict, Any, TYPE_CHECKING
-from sqlmodel import SQLModel, Field, Relationship, Column, JSON, Text
+from sqlmodel import SQLModel, Field, Relationship, Column, JSON, Text, ARRAY, Integer
 
 if TYPE_CHECKING:
     from .user import User
@@ -17,10 +17,18 @@ class ChatSession(SQLModel, table=True):
     
     # 归属关系
     user_id: int = Field(foreign_key="user.id", index=True)
+    
+    # 主要关联的 Knowledge ID (兼容旧逻辑，作为"主"知识库)
     knowledge_id: int = Field(foreign_key="knowledge.id", index=True)
+    
+    # [New] 支持关联多个知识库 ID
+    # 使用 JSON 存储 ID 列表，方便扩展
+    knowledge_ids: List[int] = Field(default_factory=list, sa_column=Column(JSON))
     
     # 会话元数据
     title: str = Field(default="New Chat", max_length=255)
+    icon: str = Field(default="message-square", description="UI Icon name") # [New] 图标
+    
     is_deleted: bool = Field(default=False) # 软删除
     
     created_at: datetime = Field(default_factory=datetime.now)

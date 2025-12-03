@@ -9,7 +9,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api import deps
 from app.domain.schemas.chat import (
-    ChatSessionCreate, ChatSessionRead, 
+    ChatSessionCreate, ChatSessionRead, ChatSessionUpdate,
     MessageRead, ChatRequest, ChatResponse
 )
 from app.domain.models import User
@@ -36,7 +36,26 @@ async def create_chat_session(
         db, 
         user_id=current_user.id, 
         knowledge_id=data.knowledge_id,
-        title=data.title
+        title=data.title or "New Chat",
+        icon=data.icon or "message-square"
+    )
+    return session
+
+@router.patch("/sessions/{session_id}", response_model=ChatSessionRead)
+async def update_chat_session(
+    session_id: uuid.UUID,
+    data: ChatSessionUpdate,
+    db: AsyncSession = Depends(deps.get_db_session),
+    current_user: User = Depends(deps.get_current_active_user)
+):
+    """更新会话设置 (Title, Icon, Knowledge IDs)"""
+    # 如果更新了 Knowledge IDs，需要校验权限
+    if data.knowledge_ids:
+        for kid in data.knowledge_ids:
+             await knowledge_crud.get_knowledge_by_id(db, kid, current_user.id)
+
+    session = await chat_service.update_session(
+        db, session_id, current_user.id, data
     )
     return session
 
@@ -49,6 +68,15 @@ async def get_user_sessions(
 ):
     """获取会话列表"""
     return await chat_service.get_user_sessions(db, current_user.id, skip, limit)
+
+@router.get("/sessions/{session_id}", response_model=ChatSessionRead)
+async def get_session_detail(
+    session_id: uuid.UUID,
+    db: AsyncSession = Depends(deps.get_db_session),
+    current_user: User = Depends(deps.get_current_active_user)
+):
+    """获取会话详情"""
+    return await chat_service.get_session_by_id(db, session_id, current_user.id)
 
 @router.delete("/sessions/{session_id}")
 async def delete_chat_session(
@@ -80,12 +108,7 @@ async def chat_completion(
     pipeline_factory = Depends(deps.get_rag_pipeline_factory)
 ):
     """
-    核心对话接口：
-    1. 校验 Session
-    2. 保存 User Message
-    3. 检索历史记录
-    4. RAG 推理 (流式/非流式)
-    5. 保存 Assistant Message
+    核心对话接口
     """
     # 1. 获取 Session (包含权限校验)
     session = await chat_service.get_session_by_id(db, session_id, current_user.id)
@@ -96,27 +119,24 @@ async def chat_completion(
     )
     
     # 3. 获取历史记录 (用于 Context)
-    # 这里的 history 是 Message 对象列表
     history_objs = await chat_service.get_session_history(db, session_id, current_user.id)
     
-    # 转换为 LangChain 友好的格式 (或直接传给 QAService 处理)
-    # 假设 QAService 接受 list[("role", "content")] 或类似格式
-    # 我们这里简单处理为 list[BaseMessage]
     from langchain_core.messages import HumanMessage, AIMessage
     chat_history = []
     for msg in history_objs:
-        # 跳过刚刚保存的当前问题，避免重复
         if msg.content == request.query and msg.role == "user" and msg == history_objs[-1]:
             continue
-            
         if msg.role == "user":
             chat_history.append(HumanMessage(content=msg.content))
         elif msg.role == "assistant":
             chat_history.append(AIMessage(content=msg.content))
     
     # 4. 初始化 Pipeline
+    # 优先使用 knowledge_ids (多库)，兼容旧数据使用 knowledge_id
+    target_kb_ids = session.knowledge_ids if session.knowledge_ids else [session.knowledge_id]
+    
     rag_chain = await pipeline_factory(
-        knowledge_id=session.knowledge_id,
+        knowledge_ids=target_kb_ids,
         llm_model=request.llm_model,
         rerank_model_name=request.rerank_model_name
     )
@@ -130,7 +150,7 @@ async def chat_completion(
             async for chunk in rag_chain.astream_with_sources(
                 request.query, 
                 top_k=request.top_k,
-                chat_history=chat_history # 注入历史
+                chat_history=chat_history
             ):
                 if isinstance(chunk, list):
                     # Sources
@@ -139,7 +159,8 @@ async def chat_completion(
                             "filename": doc.metadata.get("source"),
                             "page": doc.metadata.get("page"),
                             "content": doc.page_content,
-                            "score": doc.metadata.get("rerank_score")
+                            "score": doc.metadata.get("rerank_score"),
+                            "knowledge_id": doc.metadata.get("knowledge_id") # 携带库ID便于区分
                         }
                         sources_data.append(src)
                     
@@ -149,7 +170,6 @@ async def chat_completion(
                     full_answer += chunk
                     yield f"event: message\ndata: {json.dumps(chunk)}\n\n"
             
-            # 流式结束后，持久化 AI 回复
             if full_answer:
                 await chat_service.save_message(
                     db, session_id, "assistant", full_answer, sources=sources_data
@@ -171,10 +191,10 @@ async def chat_completion(
                 "filename": doc.metadata.get("source"),
                 "page": doc.metadata.get("page"),
                 "content": doc.page_content,
-                "score": doc.metadata.get("rerank_score")
+                "score": doc.metadata.get("rerank_score"),
+                "knowledge_id": doc.metadata.get("knowledge_id")
             })
             
-        # 持久化 AI 回复
         await chat_service.save_message(
             db, session_id, "assistant", answer, sources=sources_list
         )

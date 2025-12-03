@@ -2,11 +2,10 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from langchain_elasticsearch import ElasticsearchStore
 from langchain_core.embeddings import Embeddings
-from langchain_core.vectorstores import VectorStore
 
 from app.core.config import settings
 from app.services.retrieval.es_client import get_es_client
@@ -16,51 +15,59 @@ logger = logging.getLogger(__name__)
 class VectorStoreManager:
     """
     Elasticsearch 向量库管理器
-    负责索引的创建(Mapping配置)、获取和清理。
     """
 
     def __init__(self, collection_name: str, embed_model: Embeddings):
         """
-        :param collection_name: 对应 ES 中的 index_name
+        :param collection_name: 对应 ES 中的 index_name。
+                                如果包含逗号，则视为多索引查询模式。
         :param embed_model: LangChain Embeddings 实例
         """
-        # 统一添加前缀，避免索引名冲突
-        self.index_name = f"{settings.ES_INDEX_PREFIX}_{collection_name}".lower()
+        self.raw_collection_name = collection_name
         self.embed_model = embed_model
         self.client = get_es_client()
+        
+        # 处理多索引情况 (e.g., "kb_1,kb_2")
+        if "," in collection_name:
+            # 拼接完整索引名: rag_kb_1,rag_kb_2
+            names = collection_name.split(",")
+            self.index_name = ",".join([f"{settings.ES_INDEX_PREFIX}_{n}".lower() for n in names])
+            self.is_multi_index = True
+        else:
+            self.index_name = f"{settings.ES_INDEX_PREFIX}_{collection_name}".lower()
+            self.is_multi_index = False
 
     def get_vector_store(self) -> ElasticsearchStore:
         """
         获取 LangChain 的 ElasticsearchStore 实例 (Lazy Load)
         """
-        # 确保索引存在（带正确的 Mapping）
-        self.ensure_index()
+        # 仅在单索引且非查询模式下尝试创建索引
+        # 如果是多索引查询，假设索引已存在
+        if not self.is_multi_index:
+            self.ensure_index()
 
         return ElasticsearchStore(
             es_connection=self.client,
             index_name=self.index_name,
             embedding=self.embed_model,
-            # 指定存储文本和向量的字段名，需与 ensure_index 中的 Mapping 保持一致
             query_field="text",
             vector_query_field="vector",
-            # 距离策略: COSINE, EUCLIDEAN, DOT_PRODUCT
-            # 注意：这里仅影响 LangChain 内部的一些逻辑，核心约束在 ES Mapping 中
             distance_strategy="COSINE" 
         )
 
     def ensure_index(self) -> None:
         """
         核心方法：检查索引是否存在，不存在则创建并应用 IK 分词和向量 Mapping。
+        注意：多索引模式下不执行此操作。
         """
+        if self.is_multi_index:
+            return
+
         if self.client.indices.exists(index=self.index_name):
-            # logger.debug(f"索引 {self.index_name} 已存在，跳过创建。")
             return
 
         logger.info(f"正在创建 Elasticsearch 索引: {self.index_name}")
         
-        # -------------------------------------------------------
-        # Mapping 定义 (关键)
-        # -------------------------------------------------------
         mapping_body = {
             "settings": {
                 "number_of_shards": 1,
@@ -68,20 +75,17 @@ class VectorStoreManager:
             },
             "mappings": {
                 "properties": {
-                    # 1. 文本字段：配置 IK 分词器
                     "text": {
                         "type": "text",
-                        "analyzer": "ik_max_word",      # 索引时：细粒度分词 尽可能的给出所有可能的词组
-                        "search_analyzer": "ik_smart"   # 查询时：粗粒度分词 不会给出重复覆盖的词
+                        "analyzer": "ik_max_word",
+                        "search_analyzer": "ik_smart"
                     },
-                    # 2. 向量字段：配置 Dense Vector
                     "vector": {
                         "type": "dense_vector",
-                        "dims": settings.EMBEDDING_DIM, # 必须与模型维度一致
-                        "index": True,                  # 开启 HNSW 索引
-                        "similarity": "cosine"          # 相似度算法: cosine, l2_norm, dot_product
+                        "dims": settings.EMBEDDING_DIM,
+                        "index": True,
+                        "similarity": "cosine"
                     },
-                    # 3. 元数据字段：LangChain 默认将 metadata 放在 metadata 字段下
                     "metadata": {
                         "type": "object",
                         "dynamic": True
@@ -92,7 +96,7 @@ class VectorStoreManager:
 
         try:
             self.client.indices.create(index=self.index_name, body=mapping_body)
-            logger.info(f"索引 {self.index_name} 创建成功 (Dim: {settings.EMBEDDING_DIM}, Analyzer: IK)。")
+            logger.info(f"索引 {self.index_name} 创建成功。")
         except Exception as e:
             logger.error(f"创建索引 {self.index_name} 失败: {e}")
             raise e
@@ -101,6 +105,10 @@ class VectorStoreManager:
         """
         删除整个索引 (用于知识库删除)
         """
+        if self.is_multi_index:
+            logger.warning("尝试删除多重索引引用，操作已忽略。")
+            return False
+
         if self.client.indices.exists(index=self.index_name):
             try:
                 self.client.indices.delete(index=self.index_name)
@@ -112,9 +120,9 @@ class VectorStoreManager:
         return True
      
     def delete_by_doc_id(self, doc_id: int) -> bool:
-        """
-        利用 delete_by_query 根据 metadata.doc_id 删除向量
-        """
+        if self.is_multi_index:
+            return False
+            
         query = {
             "query": {
                 "term": {

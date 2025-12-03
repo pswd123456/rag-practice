@@ -1,5 +1,5 @@
 import api from "@/lib/api";
-import { ChatSession, Message, ChatRequest } from "@/lib/types";
+import { ChatSession, Message, ChatRequest, ChatSessionUpdate } from "@/lib/types";
 import { useAuthStore } from "@/lib/store";
 
 export const chatService = {
@@ -9,11 +9,22 @@ export const chatService = {
     return response.data;
   },
 
+  getSession: async (sessionId: string) => {
+    const response = await api.get<ChatSession>(`/chat/sessions/${sessionId}`);
+    return response.data;
+  },
+
   createSession: async (knowledgeId: number) => {
     const response = await api.post<ChatSession>("/chat/sessions", {
       knowledge_id: knowledgeId,
       title: "New Chat",
+      icon: "message-square"
     });
+    return response.data;
+  },
+
+  updateSession: async (sessionId: string, data: ChatSessionUpdate) => {
+    const response = await api.patch<ChatSession>(`/chat/sessions/${sessionId}`, data);
     return response.data;
   },
 
@@ -27,15 +38,6 @@ export const chatService = {
     return response.data;
   },
 
-  /**
-   * 发送消息并处理 SSE 流式响应
-   * @param sessionId 会话ID
-   * @param payload 请求体
-   * @param onMessageCallback 接收文本块的回调
-   * @param onSourcesCallback 接收引用源的回调
-   * @param onErrorCallback 错误回调
-   * @param onFinishCallback 完成回调
-   */
   sendMessageStream: async (
     sessionId: string,
     payload: ChatRequest,
@@ -74,12 +76,7 @@ export const chatService = {
         const chunk = decoder.decode(value, { stream: true });
         buffer += chunk;
 
-        // 处理 buffer 中的 SSE 事件
-        // 格式通常是:
-        // event: message\n
-        // data: "..."\n\n
         const lines = buffer.split("\n\n");
-        // 保留最后一个可能不完整的块
         buffer = lines.pop() || "";
 
         for (const line of lines) {
@@ -90,12 +87,9 @@ export const chatService = {
 
             if (eventType === "message") {
               try {
-                // 后端可能返回 JSON 字符串或直接字符串，根据后端实现调整
-                // 这里假设 dataRaw 是 JSON 格式的字符串 token
                 const token = JSON.parse(dataRaw);
                 onMessageCallback(token);
               } catch (e) {
-                // 如果不是 JSON，直接当文本
                 onMessageCallback(dataRaw);
               }
             } else if (eventType === "sources") {

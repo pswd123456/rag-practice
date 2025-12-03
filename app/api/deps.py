@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from typing import AsyncGenerator, Optional
+from typing import AsyncGenerator, Optional, List
 from fastapi import Depends, Request, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
@@ -31,9 +31,6 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
         yield session
 
 async def get_redis_pool(request: Request) -> ArqRedis:
-    """
-    从 app.state 获取全局复用的 Redis 连接池。
-    """
     if not hasattr(request.app.state, "redis_pool"):
         raise RuntimeError("Redis pool not initialized in app state")
     return request.app.state.redis_pool
@@ -48,8 +45,6 @@ async def get_current_user(
         )
         token_data = TokenPayload(**payload)
     except (JWTError, ValidationError):
-        # [Fix] 之前返回 403 导致前端拦截器无法识别过期状态
-        # 根据 HTTP 规范，凭证无效/过期应返回 401 Unauthorized
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials",
@@ -63,7 +58,6 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # 根据 sub (这里存的是 user_id) 查询用户
     user = await db.get(User, int(token_data.sub))
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -79,14 +73,14 @@ def get_current_active_user(
 
 def get_rag_pipeline_factory(
     db: AsyncSession = Depends(get_db_session),
-    #user: User = Depends(get_current_active_user)
 ):
     async def create_pipeline(
+        knowledge_ids: Optional[List[int]] = None, 
         knowledge_id: Optional[int] = None, 
-        top_k: int = settings.TOP_K, # 这是 Final Top K (默认 3)
+        top_k: int = settings.TOP_K, 
         strategy: str = "hybrid",    
         llm_model: Optional[str] = None,
-        rerank_model_name: Optional[str] = None # 支持覆盖 Rerank 模型
+        rerank_model_name: Optional[str] = None
     ) -> RAGPipeline:
         
         # 1. LLM & QA
@@ -101,35 +95,44 @@ def get_rag_pipeline_factory(
         )
 
         # 3. Vector Store Config
-        collection_name = "default_collection"
-        embed_model_name = "text-embedding-v4"
+        target_ids = []
+        if knowledge_ids:
+            target_ids = knowledge_ids
+        elif knowledge_id:
+            target_ids = [knowledge_id]
+            
+        if not target_ids:
+             raise ValueError("Must provide knowledge_id or knowledge_ids")
 
-        if knowledge_id:
-            knowledge = await db.get(Knowledge, knowledge_id)
-            if not knowledge:
-                raise ValueError(f"Knowledge Base {knowledge_id} not found")
-            collection_name = f"kb_{knowledge.id}"
-            embed_model_name = knowledge.embed_model
+        # 4. Collection Name Construction
+        first_kb = await db.get(Knowledge, target_ids[0])
+        if not first_kb:
+             raise ValueError(f"Knowledge {target_ids[0]} not found")
+             
+        collection_names = [f"kb_{kid}" for kid in target_ids]
+        collection_name_str = ",".join(collection_names)
+        embed_model_name = first_kb.embed_model
 
-        # 4. Manager
+        # 5. Manager
         embed_model = setup_embed_model(embed_model_name)
-        manager = VectorStoreManager(collection_name, embed_model)
-        await asyncio.to_thread(manager.ensure_index)
+        
+        # [Fix] 预先遍历所有知识库，确保它们的物理索引都存在
+        # 这样即使某个知识库是空的，也不会导致 ES 抛出 "no such index"
+        for single_name in collection_names:
+            temp_manager = VectorStoreManager(single_name, embed_model)
+            await asyncio.to_thread(temp_manager.ensure_index)
 
-        # 5. Build Pipeline
-        # 注意: 这里我们将 RECALL_TOP_K 传给 factory 构造 Retriever
-        # top_k (Final K) 将在调用 pipeline.async_query 时使用，或者我们在 build 时也可以存入 pipeline
+        manager = VectorStoreManager(collection_name_str, embed_model)
+        
+        # 6. Build Pipeline
         pipeline = RAGPipeline.build(
             store_manager=manager,
             qa_service=qa_service,
             rerank_service=rerank_service,
-            knowledge_id=knowledge_id,
+            knowledge_ids=target_ids, 
             recall_top_k=settings.RECALL_TOP_K,
             strategy=strategy
         )
-        
-        # 临时将 final_top_k 绑定到 pipeline 实例上，方便某些不传参的调用 (Optional)
-        pipeline.final_top_k = top_k 
         
         return pipeline
         
