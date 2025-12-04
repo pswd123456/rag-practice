@@ -15,7 +15,7 @@ class ChatSessionRead(BaseModel):
     id: UUID
     title: str
     icon: str
-    top_k: int # [New]
+    top_k: int 
     knowledge_id: int
     knowledge_ids: List[int]
     user_id: int
@@ -26,7 +26,7 @@ class ChatSessionUpdate(BaseModel):
     title: Optional[str] = None
     icon: Optional[str] = None
     knowledge_ids: Optional[List[int]] = None
-    top_k: Optional[int] = None # [New]
+    top_k: Optional[int] = None 
 
 # --- Message Schemas ---
 
@@ -45,10 +45,13 @@ class ChatRequest(BaseModel):
     """
     query: str
     
-    # 运行时参数 (可选覆盖默认值)
-    top_k: Optional[int] = None # 如果前端不传，则使用 Session 中的 top_k
+    # 运行时参数
+    top_k: Optional[int] = None 
     llm_model: Optional[str] = None
     rerank_model_name: Optional[str] = None
+    
+    # 🟢 [New] 支持自定义 Prompt 名称 (对应 Langfuse 中的 Prompt Name)
+    prompt_name: Optional[str] = None 
     
     # 流式标记
     stream: bool = True

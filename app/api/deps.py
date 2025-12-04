@@ -81,12 +81,13 @@ def get_rag_pipeline_factory(
         top_k: int = settings.TOP_K, 
         strategy: str = "hybrid",    
         llm_model: Optional[str] = None,
-        rerank_model_name: Optional[str] = None
+        rerank_model_name: Optional[str] = None,
+        prompt_name: Optional[str] = None
     ) -> RAGPipeline:
         
         # 1. LLM & QA
         llm = setup_llm(model_name=llm_model)
-        qa_service = QAService(llm)
+        qa_service = QAService(llm, prompt_name=prompt_name or "rag-default")
         
         # 2. Rerank Service
         target_rerank_model = rerank_model_name or settings.RERANK_MODEL_NAME

@@ -1,3 +1,4 @@
+// frontend/rag-practice-frontend/app/(dashboard)/chat/[sessionId]/page.tsx
 "use client";
 
 import { useEffect, useState, useRef } from "react";
@@ -10,7 +11,6 @@ import { Message, Source, ChatRequest, ChatSession } from "@/lib/types";
 import { MessageBubble } from "@/components/business/chat/message-bubble";
 import { ChatInput, ModelOption } from "@/components/business/chat/chat-input";
 import { ChatSettings } from "@/components/business/chat/chat-settings";
-// 🟢 引入 Store，以便在标题自动生成后更新侧边栏
 import { useChatStore } from "@/lib/store";
 
 const MODEL_OPTIONS: ModelOption[] = [
@@ -32,9 +32,10 @@ export default function ChatSessionPage() {
   const [loadingInitial, setLoadingInitial] = useState(true);
   const [streaming, setStreaming] = useState(false);
   
-  // Chat Settings
+  // Chat Settings (Local State)
   const [selectedModel, setSelectedModel] = useState("qwen-max");
-  
+  const [selectedPrompt, setSelectedPrompt] = useState("rag-default"); // 🟢 [New]
+
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -43,7 +44,7 @@ export default function ChatSessionPage() {
     }
   }, [sessionId]);
 
-  // 自动滚动
+  // ... (保持原有的 useEffects 和 initSession, refreshSessionInfo 不变) ...
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollIntoView({ behavior: "smooth" });
@@ -89,10 +90,10 @@ export default function ChatSessionPage() {
 
     const payload: ChatRequest = {
       query: input,
-      // 🟢 优先使用 session 中的配置，如果没有则默认 3
       top_k: session?.top_k || 3,
       stream: true,
-      llm_model: selectedModel
+      llm_model: selectedModel,
+      prompt_name: selectedPrompt // 🟢 Pass prompt_name
     };
 
     await chatService.sendMessageStream(
@@ -113,10 +114,9 @@ export default function ChatSessionPage() {
       },
       () => {
         setStreaming(false);
-        // 如果是新对话，标题可能会变，刷新本地 Session 和全局 Sidebar
         if (session?.title === "New Chat" || session?.title === "新对话") {
            refreshSessionInfo();
-           fetchSessions(); // 🟢 刷新侧边栏
+           fetchSessions(); 
         }
         setMessages((prev) => {
           const newHistory = [...prev];
@@ -130,6 +130,7 @@ export default function ChatSessionPage() {
     );
   };
 
+  // ... (updateLastMessage, handleStop 保持不变) ...
   const updateLastMessage = (content: string, sources?: Source[]) => {
     setMessages((prev) => {
       const newHistory = [...prev];
@@ -160,9 +161,7 @@ export default function ChatSessionPage() {
 
   return (
     <div className="relative flex flex-col h-full bg-zinc-50/50 dark:bg-zinc-950/50">
-      {/* Simplified Header Bar 
-          移除了这里的 Select，只保留标题和设置按钮
-      */}
+      {/* Header */}
       <div className="flex items-center justify-between px-6 py-2 border-b bg-background/80 backdrop-blur-sm sticky top-0 z-10 h-14">
         <div className="flex items-center gap-4">
           <div>
@@ -172,14 +171,12 @@ export default function ChatSessionPage() {
                {session?.knowledge_ids && session.knowledge_ids.length > 1 && (
                  <span className="text-primary/80">({session.knowledge_ids.length} 知识库)</span>
                )}
-               {/* 🟢 显示 TopK 配置 */}
                <span className="text-muted-foreground/60">· Top {session?.top_k || 3}</span>
             </div>
           </div>
         </div>
 
         <div>
-          {/* Settings Trigger */}
           {session && <ChatSettings session={session} onUpdate={refreshSessionInfo} />}
         </div>
       </div>
@@ -201,7 +198,7 @@ export default function ChatSessionPage() {
         </div>
       </div>
 
-      {/* Input Area - 包含模型选择器 */}
+      {/* Input Area */}
       <div className="sticky bottom-0 bg-background/80 backdrop-blur-sm border-t pt-2 pb-4">
         <ChatInput 
           isLoading={streaming} 
@@ -210,6 +207,9 @@ export default function ChatSessionPage() {
           selectedModel={selectedModel}
           onModelChange={setSelectedModel}
           modelOptions={MODEL_OPTIONS}
+          // 🟢 Pass Props
+          selectedPrompt={selectedPrompt}
+          onPromptChange={setSelectedPrompt}
         />
       </div>
     </div>

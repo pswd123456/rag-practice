@@ -101,6 +101,7 @@ export interface ChatRequest {
   llm_model?: string;
   rerank_model_name?: string;
   stream?: boolean;
+  prompt_name?: string;
 }
 
 // === Evaluation Types [New] ===

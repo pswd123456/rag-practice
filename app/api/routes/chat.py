@@ -134,9 +134,10 @@ async def chat_completion(
     rag_chain = await pipeline_factory(
         knowledge_ids=target_kb_ids,
         llm_model=request.llm_model,
-        rerank_model_name=request.rerank_model_name
+        rerank_model_name=request.rerank_model_name,
+        prompt_name=request.prompt_name
     )
-
+    
     # 确定 Top K: 请求参数优先，其次是会话设置，最后默认 3
     final_top_k = request.top_k if request.top_k is not None else session.top_k
 

@@ -1,3 +1,6 @@
+/**
+ * frontend/rag-practice-frontend/components/business/app-sidebar.tsx
+ */
 "use client";
 
 import { useEffect, useState } from "react";
@@ -7,8 +10,8 @@ import {
   BookOpen, 
   BarChart2, 
   MessageSquare, 
-  Bot,
-  Zap,
+  Bot, 
+  Zap, 
   Plus, 
   Trash2, 
   MoreHorizontal,
@@ -47,7 +50,7 @@ import { Label } from "@/components/ui/label";
 import { chatService } from "@/lib/services/chat";
 import { knowledgeService } from "@/lib/services/knowledge";
 import { Knowledge } from "@/lib/types";
-import { useChatStore } from "@/lib/store"; // 🟢 引入全局 Store
+import { useChatStore, useAuthStore } from "@/lib/store"; // 🟢 [修改] 引入 useAuthStore
 
 interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {}
 
@@ -65,6 +68,9 @@ export function AppSidebar({ className }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
 
+  // 🟢 [修改] 获取当前用户权限信息
+  const { user } = useAuthStore();
+  
   // 🟢 使用全局 Store
   const { sessions, isLoading: sessionsLoading, fetchSessions, addSession, removeSession } = useChatStore();
   
@@ -127,9 +133,23 @@ export function AppSidebar({ className }: SidebarProps) {
     }
   };
 
+  // 🟢 [修改] 根据权限动态生成菜单
   const staticNavItems = [
-    { title: "知识库管理", href: "/knowledge", icon: BookOpen, match: "/knowledge" },
-    { title: "评测看板", href: "/evaluation", icon: BarChart2, match: "/evaluation" },
+    { 
+      title: "知识库管理", 
+      href: "/knowledge", 
+      icon: BookOpen, 
+      match: "/knowledge",
+      visible: true 
+    },
+    { 
+      title: "评测看板", 
+      href: "/evaluation", 
+      icon: BarChart2, 
+      match: "/evaluation",
+      // 仅管理员可见
+      visible: user?.is_superuser 
+    },
   ];
 
   return (
@@ -143,19 +163,24 @@ export function AppSidebar({ className }: SidebarProps) {
       </div>
 
       <div className="px-3 space-y-1 shrink-0">
-        {staticNavItems.map((item) => (
-          <Button
-            key={item.href}
-            variant={pathname.startsWith(item.match) ? "secondary" : "ghost"}
-            className="w-full justify-start font-normal"
-            asChild
-          >
-            <Link href={item.href}>
-              <item.icon className="mr-2 h-4 w-4" />
-              {item.title}
-            </Link>
-          </Button>
-        ))}
+        {staticNavItems.map((item) => {
+          // 🟢 [修改] 如果不可见则不渲染
+          if (!item.visible) return null;
+
+          return (
+            <Button
+              key={item.href}
+              variant={pathname.startsWith(item.match) ? "secondary" : "ghost"}
+              className="w-full justify-start font-normal"
+              asChild
+            >
+              <Link href={item.href}>
+                <item.icon className="mr-2 h-4 w-4" />
+                {item.title}
+              </Link>
+            </Button>
+          );
+        })}
       </div>
 
       <Separator className="my-4" />
