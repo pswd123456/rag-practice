@@ -27,6 +27,7 @@ from app.services.retrieval import VectorStoreManager
 from app.services.pipelines import RAGPipeline
 from app.services.generation import QAService
 from app.services.evaluation.evaluation_runner import RAGEvaluator
+from app.services.rerank.rerank_service import RerankService
 
 logger = logging.getLogger(__name__)
 
@@ -229,15 +230,28 @@ async def run_experiment_pipeline(db: AsyncSession, experiment_id: int):
         embed_model = setup_embed_model(kb.embed_model)
         
         vector_store_manager = VectorStoreManager(f"kb_{kb.id}", embed_model)
-        await asyncio.to_thread(vector_store_manager.ensure_collection)
+        # [Fix] 修正方法名为 ensure_index (原为 ensure_collection 笔误)
+        await asyncio.to_thread(vector_store_manager.ensure_index)
         
         qa_service = QAService(student_llm) 
         
+        # [Fix] 初始化 Rerank Service (Pipeline 依赖)
+        target_rerank_model = settings.RERANK_MODEL_NAME
+        rerank_service = RerankService(
+            base_url=settings.RERANK_BASE_URL,
+            model_name=target_rerank_model
+        )
+
+        # [Fix] 获取用户配置的 top_k (默认为 3)
+        user_top_k = params.get("top_k", settings.TOP_K)
+
         pipeline = RAGPipeline.build(
             store_manager=vector_store_manager,
             qa_service=qa_service,
-            top_k=params.get("top_k", settings.TOP_K),
-            strategy=params.get("strategy", "default")
+            rerank_service=rerank_service, # [Fix] 传入 RerankService
+            recall_top_k=settings.RECALL_TOP_K, # [Fix] 使用系统默认的广召回 TopK (e.g. 50)
+            strategy=params.get("strategy", "default"),
+            knowledge_id=kb.id # 明确指定 KB ID 以便使用 Filter
         )
         
         evaluator = RAGEvaluator(
@@ -282,7 +296,12 @@ async def run_experiment_pipeline(db: AsyncSession, experiment_id: int):
                 }
             ) as trace:
 
-                answer_result, docs = await pipeline.async_query(question)
+                answer_result, docs = await pipeline.async_query(
+                    question, 
+                    top_k=user_top_k, 
+                    chat_history=[] 
+                )
+                
                 retrieved_contexts = [d.page_content for d in docs]
 
                 scores = await evaluator.score_single_item(

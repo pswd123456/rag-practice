@@ -225,8 +225,9 @@ async def run_experiment_task(ctx: Any, experiment_id: int):
         except Exception as e:
             logger.error(f"[Task] 实验运行异常 (ID {experiment_id}): {e}", exc_info=True)
 
-run_experiment_task.max_tries = 3 # type: ignore
+run_experiment_task.max_tries = 0 # type: ignore
 run_experiment_task.retry_delay = 10 # type: ignore
+run_experiment_task.timeout = 6000
 
 # --- Arq 配置 ---
 

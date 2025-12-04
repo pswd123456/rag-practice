@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -13,7 +13,10 @@ import {
   FileText, 
   CheckCircle2, 
   AlertCircle,
-  Clock 
+  Clock,
+  Search,
+  CheckSquare,
+  Square
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -32,7 +35,6 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
   DialogFooter,
 } from "@/components/ui/dialog";
 import {
@@ -51,14 +53,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-// import { Checkbox } from "@/components/ui/checkbox"; 
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
 
 import { useAuthStore } from "@/lib/store";
 import { evaluationService } from "@/lib/services/evaluation";
 import { knowledgeService, RAGDocument } from "@/lib/services/knowledge";
 import { Testset, Knowledge } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
 // Schema for creating testset
 const formSchema = z.object({
@@ -78,17 +81,16 @@ export default function TestsetsPage() {
   const [knowledges, setKnowledges] = useState<Knowledge[]>([]);
   const [kbDocuments, setKbDocuments] = useState<RAGDocument[]>([]);
   const [loadingDocs, setLoadingDocs] = useState(false);
+  
+  // Doc Selection Filtering
+  const [searchQuery, setSearchQuery] = useState("");
 
-  // Form
-  // [Fix] 移除显式泛型 <z.infer<typeof formSchema>>
-  // 原因：zodResolver 会自动推断输入/输出类型，显式泛型会导致与 z.coerce 的输入类型冲突
   const form = useForm({
     resolver: zodResolver(formSchema),
     defaultValues: {
       name: "",
-      // @ts-ignore - 初始值为 undefined 以便 Select 显示 placeholder，虽然 schema 要求 number
-      knowledge_id: undefined,
-      doc_ids: [],
+      knowledge_id: undefined as unknown as number,
+      doc_ids: [] as number[],
       generator_llm: "qwen-max",
     },
   });
@@ -106,9 +108,18 @@ export default function TestsetsPage() {
 
   useEffect(() => {
     fetchData();
+    // 轮询刷新生成中的任务
+    const interval = setInterval(() => {
+      setData(current => {
+        if (current.some(t => t.status === "GENERATING")) {
+          fetchData();
+        }
+        return current;
+      });
+    }, 5000);
+    return () => clearInterval(interval);
   }, []);
 
-  // Fetch KBs when dialog opens
   useEffect(() => {
     if (isDialogOpen) {
       const loadKBs = async () => {
@@ -119,20 +130,47 @@ export default function TestsetsPage() {
     }
   }, [isDialogOpen]);
 
-  // Fetch docs when KB changes
   const selectedKbId = form.watch("knowledge_id");
+  
   useEffect(() => {
     if (selectedKbId) {
       setLoadingDocs(true);
-      setKbDocuments([]); // clear previous
-      form.setValue("doc_ids", []); // clear selection
+      setKbDocuments([]); 
+      form.setValue("doc_ids", []);
+      setSearchQuery(""); // 重置搜索
       
-      // [Fix] 显式转换为 Number，解决 TypeScript 类型检查错误
       knowledgeService.getDocuments(Number(selectedKbId))
         .then(docs => setKbDocuments(docs))
         .finally(() => setLoadingDocs(false));
     }
   }, [selectedKbId, form]);
+
+  // Filtered Docs Logic
+  const filteredDocs = useMemo(() => {
+    if (!searchQuery) return kbDocuments;
+    return kbDocuments.filter(doc => 
+      doc.filename.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  }, [kbDocuments, searchQuery]);
+
+  // Toggle All Logic
+  const handleToggleAll = () => {
+    const currentSelected = form.getValues("doc_ids");
+    const filteredIds = filteredDocs.map(d => d.id);
+    
+    // Check if all filtered are currently selected
+    const allSelected = filteredIds.every(id => currentSelected.includes(id));
+    
+    if (allSelected) {
+      // Deselect filtered docs
+      const newSelection = currentSelected.filter(id => !filteredIds.includes(id));
+      form.setValue("doc_ids", newSelection);
+    } else {
+      // Select all filtered docs (merge)
+      const newSelection = Array.from(new Set([...currentSelected, ...filteredIds]));
+      form.setValue("doc_ids", newSelection);
+    }
+  };
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     try {
@@ -163,14 +201,13 @@ export default function TestsetsPage() {
 
   const getStatusBadge = (status: string) => {
     switch(status) {
-      case "COMPLETED": return <Badge className="bg-green-500 hover:bg-green-600"><CheckCircle2 className="w-3 h-3 mr-1"/> 完成</Badge>;
+      case "COMPLETED": return <Badge className="bg-green-600 hover:bg-green-700"><CheckCircle2 className="w-3 h-3 mr-1"/> 完成</Badge>;
       case "GENERATING": return <Badge variant="secondary" className="animate-pulse"><Loader2 className="w-3 h-3 mr-1 animate-spin"/> 生成中</Badge>;
       case "FAILED": return <Badge variant="destructive"><AlertCircle className="w-3 h-3 mr-1"/> 失败</Badge>;
       default: return <Badge variant="outline"><Clock className="w-3 h-3 mr-1"/> {status}</Badge>;
     }
   };
 
-  // 权限控制：仅 SuperUser 可创建
   const canCreate = user?.is_superuser;
 
   return (
@@ -227,141 +264,199 @@ export default function TestsetsPage() {
         </Table>
       </div>
 
-      {/* Create Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="sm:max-w-[700px]">
           <DialogHeader>
             <DialogTitle>生成新测试集 (Ragas)</DialogTitle>
             <DialogDescription>
-              选择文档，使用 LLM 自动生成 QA 对作为评估基准（Golden Dataset）。
+              配置生成模型并选择源文档，系统将自动生成问答对（Golden Dataset）。
             </DialogDescription>
           </DialogHeader>
 
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+              
+              {/* Section 1: Basic Config */}
+              <div className="space-y-4">
+                <h3 className="text-sm font-medium text-muted-foreground mb-2 uppercase tracking-wider">基础配置</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="name"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>测试集名称</FormLabel>
+                        <FormControl>
+                          <Input placeholder="例如：Qwen2.5 文档测试" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  
+                  <FormField
+                    control={form.control}
+                    name="generator_llm"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>生成模型 (Generator)</FormLabel>
+                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="选择模型" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="qwen-max">Qwen Max (推荐)</SelectItem>
+                            <SelectItem value="qwen-plus">Qwen Plus</SelectItem>
+                            <SelectItem value="deepseek-chat">DeepSeek V3</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
                 <FormField
                   control={form.control}
-                  name="name"
+                  name="knowledge_id"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>测试集名称</FormLabel>
-                      <FormControl>
-                        <Input placeholder="e.g. Qwen2.5 Doc Test" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                
-                <FormField
-                  control={form.control}
-                  name="generator_llm"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>生成模型</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                      <FormLabel>数据来源知识库</FormLabel>
+                      <Select 
+                        onValueChange={(val) => field.onChange(Number(val))} 
+                        value={field.value?.toString()}
+                      >
                         <FormControl>
                           <SelectTrigger>
-                            <SelectValue placeholder="选择模型" />
+                            <SelectValue placeholder="选择知识库..." />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="qwen-max">Qwen Max (推荐)</SelectItem>
-                          <SelectItem value="qwen-plus">Qwen Plus</SelectItem>
-                          <SelectItem value="deepseek-chat">DeepSeek V3</SelectItem>
+                          {knowledges.map(kb => (
+                            <SelectItem key={kb.id} value={kb.id.toString()}>{kb.name}</SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
-                      <FormDescription className="text-xs">
-                        用于生成问题和答案的模型。
-                      </FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
               </div>
 
-              <FormField
-                control={form.control}
-                name="knowledge_id"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>选择来源知识库</FormLabel>
-                    <Select 
-                      onValueChange={(val) => field.onChange(Number(val))} 
-                      value={field.value?.toString()}
-                    >
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="选择知识库..." />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {knowledges.map(kb => (
-                          <SelectItem key={kb.id} value={kb.id.toString()}>{kb.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              <Separator />
 
-              {/* Document Selection Area */}
-              <FormField
-                control={form.control}
-                name="doc_ids"
-                render={() => (
-                  <FormItem>
-                    <FormLabel>选择文档 ({form.watch("doc_ids")?.length || 0} 已选)</FormLabel>
-                    <div className="border rounded-md p-2 h-[200px] overflow-hidden bg-muted/20">
-                      {loadingDocs ? (
-                        <div className="h-full flex items-center justify-center text-muted-foreground">
-                          <Loader2 className="h-4 w-4 animate-spin mr-2" /> 加载文档中...
+              {/* Section 2: Document Selection */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                    文档选择 <span className="text-primary normal-case">({form.watch("doc_ids").length} 已选)</span>
+                  </h3>
+                  
+                  <div className="flex gap-2">
+                    {kbDocuments.length > 0 && (
+                      <>
+                        <div className="relative">
+                          <Search className="absolute left-2 top-1.5 h-4 w-4 text-muted-foreground" />
+                          <Input 
+                            placeholder="筛选文档..." 
+                            className="h-7 pl-8 w-[150px] text-xs"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                          />
                         </div>
-                      ) : !selectedKbId ? (
-                        <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
-                          请先选择知识库
-                        </div>
-                      ) : kbDocuments.length === 0 ? (
-                        <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
-                          该知识库暂无文档
-                        </div>
-                      ) : (
-                        <ScrollArea className="h-full">
-                          <div className="space-y-1 p-1">
-                            {kbDocuments.map((doc) => {
-                              const isSelected = form.watch("doc_ids").includes(doc.id);
-                              return (
-                                <div
-                                  key={doc.id}
-                                  className={`flex items-center space-x-2 p-2 rounded cursor-pointer transition-colors ${isSelected ? 'bg-primary/10' : 'hover:bg-muted'}`}
-                                  onClick={() => {
-                                    const current = form.getValues("doc_ids");
-                                    if (isSelected) {
-                                      form.setValue("doc_ids", current.filter(id => id !== doc.id));
-                                    } else {
-                                      form.setValue("doc_ids", [...current, doc.id]);
-                                    }
-                                  }}
-                                >
-                                  <div className={`w-4 h-4 rounded border flex items-center justify-center ${isSelected ? 'bg-primary border-primary' : 'border-muted-foreground'}`}>
-                                    {isSelected && <div className="w-2 h-2 bg-white rounded-full" />}
-                                  </div>
-                                  <FileText className="h-4 w-4 text-muted-foreground" />
-                                  <span className="text-sm truncate flex-1">{doc.filename}</span>
-                                  <Badge variant="outline" className="text-[10px]">{doc.status}</Badge>
-                                </div>
-                              );
-                            })}
+                        <Button 
+                          type="button" 
+                          variant="ghost" 
+                          size="sm" 
+                          className="h-7 text-xs"
+                          onClick={handleToggleAll}
+                        >
+                          全选/反选
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                <FormField
+                  control={form.control}
+                  name="doc_ids"
+                  render={() => (
+                    <FormItem>
+                      <div className="border rounded-md bg-muted/10 h-[280px] flex flex-col">
+                        {loadingDocs ? (
+                          <div className="flex-1 flex items-center justify-center text-muted-foreground flex-col gap-2">
+                            <Loader2 className="h-6 w-6 animate-spin" />
+                            <span className="text-sm">正在加载文档列表...</span>
                           </div>
-                        </ScrollArea>
-                      )}
-                    </div>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                        ) : !selectedKbId ? (
+                          <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
+                            请先在上方选择一个知识库
+                          </div>
+                        ) : kbDocuments.length === 0 ? (
+                          <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
+                            该知识库暂无文档
+                          </div>
+                        ) : (
+                          <ScrollArea className="flex-1">
+                            <div className="p-2 grid grid-cols-1 gap-1">
+                              {filteredDocs.length === 0 ? (
+                                <div className="py-8 text-center text-xs text-muted-foreground">未找到匹配文档</div>
+                              ) : (
+                                filteredDocs.map((doc) => {
+                                  const isSelected = form.watch("doc_ids").includes(doc.id);
+                                  return (
+                                    <div
+                                      key={doc.id}
+                                      className={cn(
+                                        "flex items-center space-x-3 p-3 rounded-md border cursor-pointer transition-all hover:shadow-sm",
+                                        isSelected 
+                                          ? "bg-primary/5 border-primary/40" 
+                                          : "bg-background border-transparent hover:bg-muted/50 hover:border-border"
+                                      )}
+                                      onClick={() => {
+                                        const current = form.getValues("doc_ids");
+                                        if (isSelected) {
+                                          form.setValue("doc_ids", current.filter(id => id !== doc.id));
+                                        } else {
+                                          form.setValue("doc_ids", [...current, doc.id]);
+                                        }
+                                      }}
+                                    >
+                                      {/* Custom Checkbox */}
+                                      <div className={cn(
+                                        "w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors",
+                                        isSelected ? "bg-primary border-primary text-primary-foreground" : "border-muted-foreground"
+                                      )}>
+                                        {isSelected && <CheckSquare className="w-3 h-3" />}
+                                      </div>
+                                      
+                                      <div className="flex-1 min-w-0 flex flex-col">
+                                        <div className="flex items-center gap-2">
+                                          <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                                          <span className="text-sm font-medium truncate" title={doc.filename}>{doc.filename}</span>
+                                        </div>
+                                        <div className="text-[10px] text-muted-foreground pl-5.5 flex gap-2">
+                                          <span>{format(new Date(doc.created_at), "yyyy-MM-dd")}</span>
+                                          <span>•</span>
+                                          <span>{doc.status}</span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })
+                              )}
+                            </div>
+                          </ScrollArea>
+                        )}
+                      </div>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
 
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>取消</Button>

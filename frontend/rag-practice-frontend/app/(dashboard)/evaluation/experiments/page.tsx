@@ -12,7 +12,10 @@ import {
   ChevronDown,
   ChevronUp,
   BarChart2,
-  Trash2
+  Trash2,
+  Clock,
+  CheckCircle2,
+  AlertCircle
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -50,6 +53,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 import { useAuthStore } from "@/lib/store";
 import { evaluationService } from "@/lib/services/evaluation";
@@ -57,8 +66,6 @@ import { knowledgeService } from "@/lib/services/knowledge";
 import { Experiment, Knowledge, Testset } from "@/lib/types";
 import { MetricRadar } from "@/components/business/evaluation/metric-radar";
 
-// [Fix] 使用 z.number() 替代 z.coerce.number()
-// 因为我们在前端组件 onChange 中已经手动转换了类型，使用严格类型可以避免 RHF 类型推断错误
 const formSchema = z.object({
   knowledge_id: z.number().min(1, "请选择知识库"),
   testset_id: z.number().min(1, "请选择测试集"),
@@ -68,7 +75,6 @@ const formSchema = z.object({
   strategy: z.enum(["hybrid", "dense", "rerank"]).default("hybrid"),
 });
 
-// 推断类型
 type FormValues = z.infer<typeof formSchema>;
 
 export default function ExperimentsPage() {
@@ -84,15 +90,11 @@ export default function ExperimentsPage() {
   // Expanded Rows for Radar Chart
   const [expandedRows, setExpandedRows] = useState<number[]>([]);
 
-  // [Fix] 移除显式泛型 <FormValues>
-  // 原因：Zod 的 .default() 会导致 Input 类型为 optional，而 FormValues (Output) 为 required。
-  // 显式传入泛型会导致 RHF 严格匹配 Output 类型，从而与 Resolver 的 Input 类型冲突。
-  // 让 TS 自动推断即可解决。
   const form = useForm({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      knowledge_id: 0, // 初始值 0，匹配 number 类型
-      testset_id: 0,   // 初始值 0
+      knowledge_id: 0, 
+      testset_id: 0,   
       student_model: "qwen-max",
       judge_model: "qwen-max",
       top_k: 3,
@@ -113,6 +115,17 @@ export default function ExperimentsPage() {
 
   useEffect(() => {
     fetchData();
+    // 简单的轮询机制，如果列表中有运行中的任务，每5秒刷新一次
+    const interval = setInterval(() => {
+      setData(currentData => {
+        const hasRunning = currentData.some(e => ["PENDING", "RUNNING"].includes(e.status));
+        if (hasRunning) {
+          fetchData(); 
+        }
+        return currentData;
+      });
+    }, 5000);
+    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
@@ -142,7 +155,7 @@ export default function ExperimentsPage() {
         runtime_params
       });
       
-      toast.success("实验已开始运行");
+      toast.success("实验任务已提交");
       setIsDialogOpen(false);
       fetchData();
     } catch (error: any) {
@@ -165,6 +178,46 @@ export default function ExperimentsPage() {
     setExpandedRows(prev => 
       prev.includes(id) ? prev.filter(r => r !== id) : [...prev, id]
     );
+  };
+
+  const renderStatusBadge = (status: string, error?: string) => {
+    switch (status) {
+      case "PENDING":
+        return (
+          <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-400 dark:border-yellow-800">
+            <Clock className="w-3 h-3 mr-1" /> 等待中
+          </Badge>
+        );
+      case "RUNNING":
+        return (
+          <Badge variant="secondary" className="animate-pulse">
+            <Loader2 className="w-3 h-3 mr-1 animate-spin"/> 运行中
+          </Badge>
+        );
+      case "COMPLETED":
+        return (
+          <Badge className="bg-green-600 hover:bg-green-700">
+            <CheckCircle2 className="w-3 h-3 mr-1"/> 完成
+          </Badge>
+        );
+      case "FAILED":
+        return (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger>
+                <Badge variant="destructive" className="cursor-help">
+                  <AlertCircle className="w-3 h-3 mr-1"/> 失败
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-[300px]">
+                <p className="text-xs">{error || "未知错误"}</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        );
+      default:
+        return <Badge variant="outline">{status}</Badge>;
+    }
   };
 
   const canRun = user?.is_superuser;
@@ -215,18 +268,12 @@ export default function ExperimentsPage() {
                     <TableCell>TS-{exp.testset_id}</TableCell>
                     <TableCell>
                       <div className="flex flex-col text-xs text-muted-foreground gap-1">
-                        <Badge variant="outline" className="w-fit">{exp.runtime_params?.strategy}</Badge>
+                        <Badge variant="outline" className="w-fit border-primary/20 text-primary">{exp.runtime_params?.strategy}</Badge>
                         <span>{exp.runtime_params?.student_model}</span>
                       </div>
                     </TableCell>
                     <TableCell>
-                      {exp.status === "RUNNING" ? (
-                        <Badge variant="secondary" className="animate-pulse"><Loader2 className="w-3 h-3 mr-1 animate-spin"/> Running</Badge>
-                      ) : exp.status === "COMPLETED" ? (
-                        <Badge className="bg-green-500">Completed</Badge>
-                      ) : (
-                        <Badge variant="destructive">Failed</Badge>
-                      )}
+                      {renderStatusBadge(exp.status, exp.error_message)}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {format(new Date(exp.created_at), "MM-dd HH:mm")}
@@ -242,7 +289,7 @@ export default function ExperimentsPage() {
                   {expandedRows.includes(exp.id) && (
                     <TableRow>
                       <TableCell colSpan={8} className="p-0 border-b">
-                        <div className="p-6 bg-muted/20 flex flex-col md:flex-row gap-8 items-center justify-center">
+                        <div className="p-6 bg-muted/20 flex flex-col md:flex-row gap-8 items-center justify-center animate-in fade-in slide-in-from-top-2 duration-300">
                           {exp.status === "COMPLETED" ? (
                             <>
                               <div className="flex-1 max-w-md w-full">
@@ -253,13 +300,15 @@ export default function ExperimentsPage() {
                                 <MetricCard label="Answer Relevancy" value={exp.answer_relevancy} />
                                 <MetricCard label="Context Recall" value={exp.context_recall} />
                                 <MetricCard label="Context Precision" value={exp.context_precision} />
+                                <MetricCard label="Answer Accuracy" value={exp.answer_accuracy} />
+                                <MetricCard label="Entity Recall" value={exp.context_entities_recall} />
                               </div>
                             </>
                           ) : (
-                            <div className="py-8 text-muted-foreground flex items-center gap-2">
-                              <BarChart2 className="w-5 h-5" />
-                              {exp.status === "FAILED" ? "实验失败，无法查看图表" : "实验运行中，请稍后..."}
-                              {exp.error_message && <div className="text-xs text-destructive mt-2">{exp.error_message}</div>}
+                            <div className="py-8 text-muted-foreground flex flex-col items-center gap-2">
+                              <BarChart2 className="w-8 h-8 opacity-50" />
+                              <p>{exp.status === "FAILED" ? "实验失败，无法查看图表" : "实验运行中，请稍后查看结果..."}</p>
+                              {exp.error_message && <div className="text-xs text-destructive bg-destructive/10 p-2 rounded max-w-lg break-words">{exp.error_message}</div>}
                             </div>
                           )}
                         </div>
@@ -284,8 +333,8 @@ export default function ExperimentsPage() {
           </DialogHeader>
 
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6 pt-4">
+              <div className="grid grid-cols-2 gap-6">
                 <FormField
                   control={form.control}
                   name="knowledge_id"
@@ -294,7 +343,6 @@ export default function ExperimentsPage() {
                       <FormLabel>目标知识库</FormLabel>
                       <Select 
                         onValueChange={(val) => field.onChange(Number(val))}
-                        // 转换 0 为 undefined 以显示 placeholder，或者 toString()
                         value={field.value ? field.value.toString() : undefined} 
                       >
                         <FormControl><SelectTrigger><SelectValue placeholder="选择..." /></SelectTrigger></FormControl>
@@ -328,7 +376,7 @@ export default function ExperimentsPage() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-6">
                 <FormField
                   control={form.control}
                   name="strategy"
@@ -355,16 +403,16 @@ export default function ExperimentsPage() {
                     <FormItem>
                       <FormLabel>Top K ({field.value})</FormLabel>
                       <FormControl>
-                        {/* 手动转换 value 为 number */}
                         <Input type="number" {...field} onChange={e => field.onChange(Number(e.target.value))} />
                       </FormControl>
+                      <FormDescription className="text-xs">单次检索返回的切片数</FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-6">
                 <FormField
                   control={form.control}
                   name="student_model"
@@ -397,14 +445,14 @@ export default function ExperimentsPage() {
                           <SelectItem value="deepseek-chat">DeepSeek V3</SelectItem>
                         </SelectContent>
                       </Select>
-                      <FormDescription className="text-[10px]">用于 Ragas 打分的 LLM</FormDescription>
+                      <FormDescription className="text-[10px]">用于 Ragas 打分</FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
               </div>
 
-              <DialogFooter>
+              <DialogFooter className="pt-4">
                 <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>取消</Button>
                 <Button type="submit">启动实验</Button>
               </DialogFooter>
@@ -418,9 +466,9 @@ export default function ExperimentsPage() {
 
 function MetricCard({ label, value }: { label: string, value: number }) {
   return (
-    <div className="bg-background p-3 rounded border flex flex-col items-center justify-center">
-      <span className="text-2xl font-bold text-primary">{(value * 100).toFixed(1)}%</span>
-      <span className="text-xs text-muted-foreground">{label}</span>
+    <div className="bg-background p-3 rounded border flex flex-col items-center justify-center hover:bg-muted/50 transition-colors">
+      <span className="text-xl font-bold text-primary">{(value * 100).toFixed(1)}%</span>
+      <span className="text-[10px] text-muted-foreground uppercase tracking-wider text-center mt-1">{label}</span>
     </div>
   );
 }
