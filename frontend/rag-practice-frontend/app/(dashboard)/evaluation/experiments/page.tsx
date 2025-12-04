@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -15,7 +15,8 @@ import {
   Trash2,
   Clock,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  RefreshCw
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -66,6 +67,26 @@ import { knowledgeService } from "@/lib/services/knowledge";
 import { Experiment, Knowledge, Testset } from "@/lib/types";
 import { MetricRadar } from "@/components/business/evaluation/metric-radar";
 
+// --- Constants & Config ---
+
+const METRIC_CONFIG = [
+  { key: "faithfulness", label: "Faithfulness" },
+  { key: "answer_relevancy", label: "Answer Relevancy" },
+  { key: "context_recall", label: "Context Recall" },
+  { key: "context_precision", label: "Context Precision" },
+  { key: "answer_accuracy", label: "Answer Accuracy" },
+  { key: "context_entities_recall", label: "Entity Recall" },
+] as const;
+
+const MODEL_OPTIONS = [
+  { value: "qwen-flash", label: "Qwen Flash" },
+  { value: "qwen-plus", label: "Qwen Plus" },
+  { value: "qwen-max", label: "Qwen Max (推荐)" },
+  { value: "deepseek-chat", label: "DeepSeek V3" },
+  { value: "deepseek-reasoner", label: "DeepSeek R1" },
+  { value: "google/gemini-3-pro-preview-free", label: "Gemini Pro" },
+];
+
 const formSchema = z.object({
   knowledge_id: z.number().min(1, "请选择知识库"),
   testset_id: z.number().min(1, "请选择测试集"),
@@ -90,6 +111,9 @@ export default function ExperimentsPage() {
   // Expanded Rows for Radar Chart
   const [expandedRows, setExpandedRows] = useState<number[]>([]);
 
+  // Polling control
+  const pollingTimerRef = useRef<NodeJS.Timeout | null>(null);
+
   const form = useForm({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -98,36 +122,58 @@ export default function ExperimentsPage() {
       student_model: "qwen-max",
       judge_model: "qwen-max",
       top_k: 3,
-      strategy: "hybrid"
+      strategy: "hybrid" as const
     },
   });
 
-  const fetchData = async () => {
+  // 核心数据获取函数
+  const fetchData = useCallback(async () => {
     try {
       const res = await evaluationService.getExperiments();
       setData(res);
+      return res; // 返回数据供轮询判断
     } catch (err) {
       toast.error("获取实验列表失败");
+      return [];
     } finally {
       setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    fetchData();
-    // 简单的轮询机制，如果列表中有运行中的任务，每5秒刷新一次
-    const interval = setInterval(() => {
-      setData(currentData => {
-        const hasRunning = currentData.some(e => ["PENDING", "RUNNING"].includes(e.status));
-        if (hasRunning) {
-          fetchData(); 
-        }
-        return currentData;
-      });
-    }, 5000);
-    return () => clearInterval(interval);
   }, []);
 
+  // 智能轮询逻辑
+  const startPolling = useCallback(() => {
+    // 如果已有定时器，先清除
+    if (pollingTimerRef.current) clearTimeout(pollingTimerRef.current);
+
+    pollingTimerRef.current = setTimeout(async () => {
+      const currentData = await fetchData();
+      
+      // 检查是否有未完成的任务
+      const hasActiveTasks = currentData.some(e => 
+        ["PENDING", "RUNNING"].includes(e.status)
+      );
+
+      // 如果有活跃任务，继续轮询
+      if (hasActiveTasks) {
+        startPolling();
+      }
+    }, 3000); // 3秒轮询一次
+  }, [fetchData]);
+
+  // 初始化加载
+  useEffect(() => {
+    fetchData().then((res) => {
+      // 如果初始加载就有活跃任务，启动轮询
+      const hasActive = res.some(e => ["PENDING", "RUNNING"].includes(e.status));
+      if (hasActive) startPolling();
+    });
+
+    return () => {
+      if (pollingTimerRef.current) clearTimeout(pollingTimerRef.current);
+    };
+  }, [fetchData, startPolling]);
+
+  // Dialog 打开时加载选项
   useEffect(() => {
     if (isDialogOpen) {
       Promise.all([
@@ -157,7 +203,12 @@ export default function ExperimentsPage() {
       
       toast.success("实验任务已提交");
       setIsDialogOpen(false);
-      fetchData();
+      
+      // 提交后立即刷新并强制启动轮询
+      setLoading(true); 
+      await fetchData(); 
+      startPolling(); 
+
     } catch (error: any) {
       toast.error("提交失败: " + error.message);
     }
@@ -190,7 +241,7 @@ export default function ExperimentsPage() {
         );
       case "RUNNING":
         return (
-          <Badge variant="secondary" className="animate-pulse">
+          <Badge variant="secondary" className="animate-pulse bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
             <Loader2 className="w-3 h-3 mr-1 animate-spin"/> 运行中
           </Badge>
         );
@@ -226,9 +277,14 @@ export default function ExperimentsPage() {
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <h2 className="text-lg font-medium">实验运行记录</h2>
-        <Button onClick={() => setIsDialogOpen(true)} disabled={!canRun}>
-          <Play className="mr-2 h-4 w-4" /> 运行新实验
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => fetchData()}>
+            <RefreshCw className="h-4 w-4 mr-2"/> 刷新
+          </Button>
+          <Button onClick={() => setIsDialogOpen(true)} disabled={!canRun}>
+            <Play className="mr-2 h-4 w-4" /> 运行新实验
+          </Button>
+        </div>
       </div>
 
       <div className="border rounded-md bg-background">
@@ -248,7 +304,9 @@ export default function ExperimentsPage() {
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">加载中...</TableCell>
+                <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                  <Loader2 className="w-6 h-6 animate-spin mx-auto"/>
+                </TableCell>
               </TableRow>
             ) : data.length === 0 ? (
               <TableRow>
@@ -259,16 +317,18 @@ export default function ExperimentsPage() {
                 <>
                   <TableRow key={exp.id} className={expandedRows.includes(exp.id) ? "border-b-0 bg-muted/50" : ""}>
                     <TableCell>
-                      <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => toggleRow(exp.id)}>
-                        {expandedRows.includes(exp.id) ? <ChevronUp className="h-4 w-4"/> : <ChevronDown className="h-4 w-4"/>}
-                      </Button>
+                      {exp.status === "COMPLETED" && (
+                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => toggleRow(exp.id)}>
+                          {expandedRows.includes(exp.id) ? <ChevronUp className="h-4 w-4"/> : <ChevronDown className="h-4 w-4"/>}
+                        </Button>
+                      )}
                     </TableCell>
                     <TableCell>#{exp.id}</TableCell>
                     <TableCell>KB-{exp.knowledge_id}</TableCell>
                     <TableCell>TS-{exp.testset_id}</TableCell>
                     <TableCell>
                       <div className="flex flex-col text-xs text-muted-foreground gap-1">
-                        <Badge variant="outline" className="w-fit border-primary/20 text-primary">{exp.runtime_params?.strategy}</Badge>
+                        <Badge variant="outline" className="w-fit border-primary/20 text-primary">{exp.runtime_params?.strategy || "Hybrid"}</Badge>
                         <span>{exp.runtime_params?.student_model}</span>
                       </div>
                     </TableCell>
@@ -286,31 +346,30 @@ export default function ExperimentsPage() {
                   </TableRow>
                   
                   {/* Expanded Content: Radar Chart & Metrics */}
-                  {expandedRows.includes(exp.id) && (
+                  {expandedRows.includes(exp.id) && exp.status === "COMPLETED" && (
                     <TableRow>
                       <TableCell colSpan={8} className="p-0 border-b">
                         <div className="p-6 bg-muted/20 flex flex-col md:flex-row gap-8 items-center justify-center animate-in fade-in slide-in-from-top-2 duration-300">
-                          {exp.status === "COMPLETED" ? (
-                            <>
-                              <div className="flex-1 max-w-md w-full">
-                                <MetricRadar experiment={exp} />
-                              </div>
-                              <div className="flex-1 grid grid-cols-2 gap-4 max-w-md">
-                                <MetricCard label="Faithfulness" value={exp.faithfulness} />
-                                <MetricCard label="Answer Relevancy" value={exp.answer_relevancy} />
-                                <MetricCard label="Context Recall" value={exp.context_recall} />
-                                <MetricCard label="Context Precision" value={exp.context_precision} />
-                                <MetricCard label="Answer Accuracy" value={exp.answer_accuracy} />
-                                <MetricCard label="Entity Recall" value={exp.context_entities_recall} />
-                              </div>
-                            </>
-                          ) : (
-                            <div className="py-8 text-muted-foreground flex flex-col items-center gap-2">
-                              <BarChart2 className="w-8 h-8 opacity-50" />
-                              <p>{exp.status === "FAILED" ? "实验失败，无法查看图表" : "实验运行中，请稍后查看结果..."}</p>
-                              {exp.error_message && <div className="text-xs text-destructive bg-destructive/10 p-2 rounded max-w-lg break-words">{exp.error_message}</div>}
-                            </div>
-                          )}
+                          <div className="flex-1 max-w-md w-full bg-background rounded-lg border shadow-sm p-4">
+                            <MetricRadar experiment={exp} />
+                          </div>
+                          <div className="flex-1 grid grid-cols-2 lg:grid-cols-3 gap-4 max-w-2xl">
+                            {/* 动态渲染存在的指标卡片 */}
+                            {METRIC_CONFIG.map((metric) => {
+                              // @ts-ignore
+                              const val = exp[metric.key];
+                              // 只有当值存在且大于0时才显示
+                              if (val === undefined || val === null || val <= 0) return null;
+                              
+                              return (
+                                <MetricCard 
+                                  key={metric.key} 
+                                  label={metric.label} 
+                                  value={val} 
+                                />
+                              );
+                            })}
+                          </div>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -383,7 +442,7 @@ export default function ExperimentsPage() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>检索策略</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                      <Select onValueChange={field.onChange} value={field.value}>
                         <FormControl><SelectTrigger><SelectValue/></SelectTrigger></FormControl>
                         <SelectContent>
                           <SelectItem value="hybrid">Hybrid (Vector + Keyword)</SelectItem>
@@ -419,12 +478,12 @@ export default function ExperimentsPage() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>被测模型 (Student)</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                      <Select onValueChange={field.onChange} value={field.value}>
                         <FormControl><SelectTrigger><SelectValue/></SelectTrigger></FormControl>
                         <SelectContent>
-                          <SelectItem value="qwen-max">Qwen Max</SelectItem>
-                          <SelectItem value="qwen-plus">Qwen Plus</SelectItem>
-                          <SelectItem value="deepseek-chat">DeepSeek V3</SelectItem>
+                          {MODEL_OPTIONS.map(opt => (
+                            <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -438,11 +497,12 @@ export default function ExperimentsPage() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>裁判模型 (Judge)</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                      <Select onValueChange={field.onChange} value={field.value}>
                         <FormControl><SelectTrigger><SelectValue/></SelectTrigger></FormControl>
                         <SelectContent>
-                          <SelectItem value="qwen-max">Qwen Max (推荐)</SelectItem>
-                          <SelectItem value="deepseek-chat">DeepSeek V3</SelectItem>
+                          {MODEL_OPTIONS.map(opt => (
+                            <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                       <FormDescription className="text-[10px]">用于 Ragas 打分</FormDescription>
@@ -454,7 +514,10 @@ export default function ExperimentsPage() {
 
               <DialogFooter className="pt-4">
                 <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>取消</Button>
-                <Button type="submit">启动实验</Button>
+                <Button type="submit" disabled={form.formState.isSubmitting}>
+                  {form.formState.isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>}
+                  启动实验
+                </Button>
               </DialogFooter>
             </form>
           </Form>
@@ -465,10 +528,20 @@ export default function ExperimentsPage() {
 }
 
 function MetricCard({ label, value }: { label: string, value: number }) {
+  const getScoreColor = (score: number) => {
+    if (score >= 0.8) return "text-green-600 dark:text-green-400";
+    if (score >= 0.5) return "text-yellow-600 dark:text-yellow-400";
+    return "text-red-600 dark:text-red-400";
+  };
+
   return (
-    <div className="bg-background p-3 rounded border flex flex-col items-center justify-center hover:bg-muted/50 transition-colors">
-      <span className="text-xl font-bold text-primary">{(value * 100).toFixed(1)}%</span>
-      <span className="text-[10px] text-muted-foreground uppercase tracking-wider text-center mt-1">{label}</span>
+    <div className="bg-background p-4 rounded-lg border shadow-sm flex flex-col items-center justify-center hover:bg-muted/30 transition-colors animate-in zoom-in-95 duration-200">
+      <span className={`text-2xl font-bold ${getScoreColor(value)}`}>
+        {(value * 100).toFixed(1)}%
+      </span>
+      <span className="text-[10px] text-muted-foreground uppercase tracking-wider text-center mt-1 font-medium">
+        {label}
+      </span>
     </div>
   );
 }

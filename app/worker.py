@@ -214,9 +214,9 @@ async def generate_testset_task(ctx: Any, testset_id: int, source_doc_ids: List[
         except Exception as e:
             logger.error(f"[Task] 测试集生成异常 (ID {testset_id}): {e}", exc_info=True)
 
-generate_testset_task.max_tries = 3 # type: ignore
+generate_testset_task.max_tries = 0 # type: ignore
 generate_testset_task.retry_delay = 10 # type: ignore
-
+generate_testset_task.timeout = 3600
 async def run_experiment_task(ctx: Any, experiment_id: int):
     logger.info(f"[Task] 开始运行实验: ID {experiment_id}")
     async with async_session_maker() as db:
@@ -227,7 +227,7 @@ async def run_experiment_task(ctx: Any, experiment_id: int):
 
 run_experiment_task.max_tries = 0 # type: ignore
 run_experiment_task.retry_delay = 10 # type: ignore
-run_experiment_task.timeout = 6000
+run_experiment_task.timeout = 3600
 
 # --- Arq 配置 ---
 
@@ -251,5 +251,7 @@ class WorkerSettings:
     
     queue_name = os.getenv("ARQ_QUEUES", settings.DEFAULT_QUEUE_NAME)
     max_jobs = 1
+    job_timeout = 3600
+
     on_startup = startup
     on_shutdown = shutdown

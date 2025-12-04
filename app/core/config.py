@@ -62,7 +62,7 @@ class Settings(BaseSettings):
     CHUNK_OVERLAP: int = 50
 
     # evaluation
-    TESTSET_SIZE: int = 4
+    TESTSET_SIZE: int = 1
     
     # langfuse
     LANGFUSE_PUBLIC_KEY: str
