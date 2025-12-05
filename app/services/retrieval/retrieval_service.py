@@ -7,6 +7,7 @@ from typing import List, Sequence, Optional
 from langchain_core.documents import Document
 from langchain_core.retrievers import BaseRetriever
 from langchain_core.runnables import RunnableConfig
+from langchain_core.runnables.base import chain
 
 logger = logging.getLogger(__name__)
 
@@ -19,13 +20,13 @@ class RetrievalService:
     def __init__(self, retriever: BaseRetriever):
         self.retriever = retriever
 
-    def fetch(self, query: str, config: Optional[RunnableConfig] = None) -> List[Document]:
-        """
-        同步检索 (支持 Tracing)
-        """
-        logger.debug("RetrievalService.fetch -> %s", query)
-        # 透传 config，确保 CallbackHandler 能捕获检索 Span
-        return self.retriever.invoke(query, config=config)
+    # def fetch(self, query: str, config: Optional[RunnableConfig] = None) -> List[Document]:
+    #     """
+    #     同步检索 (支持 Tracing)
+    #     """
+    #     logger.debug("RetrievalService.fetch -> %s", query)
+    #     # 透传 config，确保 CallbackHandler 能捕获检索 Span
+    #     return self.retriever.invoke(query, config=config)
 
     async def afetch(self, query: str, config: Optional[RunnableConfig] = None) -> List[Document]:
         """

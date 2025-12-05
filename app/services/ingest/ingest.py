@@ -128,7 +128,7 @@ async def process_document_pipeline(doc_id: int):
             d.metadata["doc_id"] = doc_id
             d.metadata["knowledge_id"] = doc_kb_id
             if "page" in d.metadata and "page_number" not in d.metadata:
-                d.metadata["page_number"] = d.metadata["page"]
+                d.metadata["page_number"] = d.metadata["page"]#兼容pyPDFloader的写法
 
         logger.info(f"文档处理完成，共生成 {len(splitted_docs)} 个切片。")
 

@@ -159,13 +159,52 @@ class DoclingLoader:
                     # 获取增强后的上下文文本 (包含标题层级等)
                     enriched_text = chunker.contextualize(chunk=chunk)
                     
+                    page_numbers = set()
+                
+                    # 获取 doc_items，如果属性不存在则返回空列表
+                    # getattr(obj, name, default) 比 hasattr 更稳健
+                    doc_items = getattr(chunk.meta, "doc_items", []) or []
+
+                    for item in doc_items:
+                        # 1. 获取 prov 列表 (兼容对象属性访问 和 字典访问)
+                        provs = []
+                        if hasattr(item, "prov"):
+                            provs = item.prov
+                        elif isinstance(item, dict) and "prov" in item:
+                            provs = item["prov"]
+                        
+                        # 如果 provs 为空或 None，跳过
+                        if not provs:
+                            continue
+                        
+                        for prov in provs:
+                            p_no = None
+                            
+                            # 尝试从 prov 中提取 page_no
+                            # 方式 A: 对象属性访问 (最常见)
+                            if hasattr(prov, "page_no"):
+                                p_no = prov.page_no
+                            
+                            # 方式 B: 字典访问 (如果是 dict)
+                            elif isinstance(prov, dict) and "page_no" in prov:
+                                p_no = prov["page_no"]
+
+                            # 如果提取到了，加入集合
+                            if p_no is not None:
+                                page_numbers.add(p_no)
+
+                    # 排序并生成最终列表
+                    sorted_pages = sorted(list(page_numbers))
+                    logger.info(f"📄 Chunk {i} 提取到的页码: {sorted_pages}")
+
                     metadata = {
                         "source": str(self.file_path),
                         "filename": Path(self.file_path).name,
                         "chunk_index": i,
-                        # 尝试从 Docling 元数据中提取页码等信息 (可能分布在 prov items 中)
                         "doc_items": [str(item) for item in chunk.meta.doc_items] if hasattr(chunk.meta, "doc_items") else [],
-                        "headings": chunk.meta.headings if hasattr(chunk.meta, "headings") else []
+                        "headings": chunk.meta.headings if hasattr(chunk.meta, "headings") else [],
+                        "page_numbers": sorted_pages,
+                        "page_number": sorted_pages[0] if sorted_pages else None # 获取第一个页码
                     }
                     
                     final_docs.append(Document(page_content=enriched_text, metadata=metadata))

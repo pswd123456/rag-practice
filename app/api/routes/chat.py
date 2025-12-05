@@ -157,7 +157,7 @@ async def chat_completion(
                     for doc in chunk:
                         src = {
                             "filename": doc.metadata.get("source"),
-                            "page": doc.metadata.get("page"),
+                            "page": doc.metadata.get("page_number") or doc.metadata.get("page"),
                             "content": doc.page_content,
                             "score": doc.metadata.get("rerank_score"),
                             "knowledge_id": doc.metadata.get("knowledge_id")

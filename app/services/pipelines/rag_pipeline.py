@@ -34,19 +34,11 @@ class RAGPipeline:
         self.qa_service = qa_service
         self.rerank_service = rerank_service
         self.langfuse_handler = CallbackHandler()
-
-        # [Pipeline 职责]: 编排 Retrieval 和 Generation
-        # qa_service.chain 期望接收 Dict
         self.generation_chain = self.qa_service.chain
-        
-        retrieval_node = RunnableLambda(
-            func = self.retrieval_service.fetch,
-            afunc = self.retrieval_service.afetch
-        )
         
         self.rag_chain = (
             {
-                "context": retrieval_node | self._format_docs,
+                "context": RunnableLambda(self.retrieval_service.afetch) | self._format_docs,
                 "question": RunnablePassthrough(),
             }
             | self.generation_chain
