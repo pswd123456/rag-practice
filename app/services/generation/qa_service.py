@@ -47,6 +47,8 @@ class QAService:
         # 确保 template 是 LangChain 的 PromptTemplate 对象
         if isinstance(self.template, str):
             self.prompt = ChatPromptTemplate.from_template(self.template)
+        elif isinstance(self.template, list):
+            self.prompt = ChatPromptTemplate.from_messages(self.template)
         else:
             self.prompt = self.template
 

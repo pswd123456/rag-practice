@@ -2,6 +2,7 @@ import logging
 import httpx
 from typing import List
 from langchain_core.documents import Document
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +26,8 @@ class RerankService:
         self, 
         query: str, 
         docs: List[Document], 
-        top_n: int
+        top_n: int,
+        threshold: float = None
     ) -> List[Document]:
         """
         对文档列表进行重排序。
@@ -38,8 +40,7 @@ class RerankService:
         if not docs:
             return []
         
-        # 如果候选文档少于等于 top_n，直接返回（虽然通常我们也希望算分，但为了性能可跳过）
-        # 这里选择不跳过，因为我们需要 score 来做置信度过滤（未来特性）
+        target_threshold = threshold if threshold is not None else settings.RERANK_THRESHOLD
         
         # 1. 构造请求 Payload
         # TEI API 格式: POST /rerank
@@ -71,11 +72,12 @@ class RerankService:
                 
                 reranked_docs = []
                 for item in results:
-                    original_index = item["index"]
                     score = item["score"]
-                    
+                    if score < target_threshold:
+                        continue # 跳过低分文档
+
+                    original_index = item["index"]
                     doc = docs[original_index]
-                    # 注入分数到 Metadata，方便前端展示
                     doc.metadata["rerank_score"] = score
                     reranked_docs.append(doc)
                 

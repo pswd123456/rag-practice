@@ -128,7 +128,10 @@ class RAGPipeline:
     #     answer = self.qa_service.invoke(inputs)
     #     return answer, docs
 
-    async def async_query(self, question: str, top_k: int = 3, **kwargs):
+    async def async_query(self, question: str, 
+                          top_k: int = 3, 
+                          threshold: float = None,
+                          **kwargs):
         """
         异步入口 (Standard: Recall -> Rerank -> Generate)
         :param top_k: 最终保留给 LLM 的切片数量 (Precision K)
@@ -144,14 +147,19 @@ class RAGPipeline:
         reranked_docs = await self.rerank_service.rerank_documents(
             query=question,
             docs=recall_docs,
-            top_n=top_k
+            top_n=top_k,
+            threshold=threshold 
         )
         
         # 3. Generate
         inputs = {"question": question, **kwargs}
         return await self._prepare_answer_async(inputs, reranked_docs)
 
-    async def astream_with_sources(self, query: str, top_k: int = 3, **kwargs) -> AsyncGenerator[Union[List[Document], str], None]:
+    async def astream_with_sources(self, 
+                                   query: str, 
+                                   top_k: int = 3,
+                                   threshold: float = None, 
+                                   **kwargs) -> AsyncGenerator[Union[List[Document], str], None]:
         """
         流式生成 (支持 Rerank)
         """
@@ -165,7 +173,8 @@ class RAGPipeline:
         reranked_docs = await self.rerank_service.rerank_documents(
             query=query,
             docs=recall_docs,
-            top_n=top_k
+            top_n=top_k,
+            threshold=threshold
         )
         
         # Yield 精排后的文档

@@ -26,13 +26,12 @@ services:
   redis:
     image: redis:latest
     restart: always
-    # [新增] 开启 AOF 持久化
     command: redis-server --appendonly yes
     networks:
       - rag-net
     ports:
       - "6379:6379"
-    # [新增] 数据卷挂载
+
     volumes:
       - redis_data:/data
 
@@ -286,7 +285,7 @@ services:
       minio:
         condition: service_started
     ports:
-      - "4000:3000"
+      - "5000:3000"
     environment:
       - NODE_ENV=production
       - CLICKHOUSE_URL=http://clickhouse:8123
