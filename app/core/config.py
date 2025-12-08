@@ -80,6 +80,7 @@ class Settings(BaseSettings):
     TOP_K: int = 5
     CHUNK_SIZE: int = 500
     CHUNK_OVERLAP: int = 50
+    MAX_TOTAL_TOKENS: int = 5000
 
     #chat config
     CHAT_WINDOW_SIZE: int = 12

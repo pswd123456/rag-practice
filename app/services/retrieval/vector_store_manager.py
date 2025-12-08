@@ -73,6 +73,8 @@ class VectorStoreManager:
         
         logger.info(f"正在创建 Elasticsearch 索引: {self.index_name}")
         
+       
+        # parent_content: 存储但不索引 (index: False)，不加载到 JVM 堆内存 (doc_values: False)
         mapping_body = {
             "settings": {
                 "number_of_shards": 1,
@@ -92,8 +94,18 @@ class VectorStoreManager:
                         "similarity": "cosine"
                     },
                     "metadata": {
-                        "type": "object",
-                        "dynamic": True
+                        "properties": {
+                            "parent_id": { "type": "keyword" },
+                            "doc_id": { "type": "keyword" },
+                            "knowledge_id": { "type": "keyword" },
+                            # parent_content 仅用于存储，不建立倒排索引，也不用于聚合
+                            "parent_content": { 
+                                "type": "keyword",
+                                "index": False,
+                                "doc_values": False,
+                                "store": True
+                            }
+                        }
                     }
                 }
             }

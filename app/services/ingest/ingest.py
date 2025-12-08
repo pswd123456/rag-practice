@@ -3,10 +3,14 @@ app/services/ingest/ingest.py
 """
 import logging
 import os
+import uuid
 import asyncio
 import tempfile
 from pathlib import Path
 from sqlmodel import select
+
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_core.documents import Document as LangChainDocument
 
 from app.db.session import async_session_maker
 from sqlalchemy.orm import selectinload
@@ -24,18 +28,15 @@ logger = logging.getLogger(__name__)
 async def process_document_pipeline(doc_id: int):
     """
     核心文档处理管道
-    将 DB 操作与耗时 IO/CPU 操作分离，避免长时间占用数据库连接。
-    
     Phases:
     1. DB: 获取元数据, 状态 -> PROCESSING
-    2. No-DB: 下载, 解析(Docling), 向量化
+    2. No-DB: 下载, 解析(Docling/Basic), 向量化
     3. DB: 状态 -> COMPLETED / FAILED
     """
     
     # -----------------------------------------------------
     # Phase 1: 初始化与状态更新 (Short DB Transaction)
     # -----------------------------------------------------
-    # 需要在 Session 关闭前提取出的局部变量
     doc_filename = None
     doc_file_path = None
     doc_kb_id = None
@@ -53,11 +54,10 @@ async def process_document_pipeline(doc_id: int):
 
         if not doc:
             logger.error(f"文档 {doc_id} 不存在")
-            return # 无法处理，直接退出
+            return
 
         knowledge = doc.knowledge_base
         if not knowledge:
-            # 尝试通过 ID 获取
             knowledge = await db.get(Knowledge, doc.knowledge_base_id)
             if not knowledge:
                 logger.error(f"关联的知识库 {doc.knowledge_base_id} 不存在")
@@ -67,7 +67,7 @@ async def process_document_pipeline(doc_id: int):
                 await db.commit()
                 return
 
-        # 提取必要数据到局部变量 (Detaching data)
+        # 提取必要数据
         doc_filename = doc.filename
         doc_file_path = doc.file_path
         doc_kb_id = doc.knowledge_base_id
@@ -82,17 +82,15 @@ async def process_document_pipeline(doc_id: int):
 
         # 更新状态
         doc.status = DocStatus.PROCESSING
-        doc.error_message = None # 清理旧错误
+        doc.error_message = None
         db.add(doc)
         await db.commit()
-    
-    # Phase 1 结束，Session 释放
     
     # -----------------------------------------------------
     # Phase 2: 核心处理 (No DB Connection)
     # -----------------------------------------------------
     temp_file_path = None
-    splitted_docs = []
+    final_docs_to_ingest = []
     
     try:
         # 1. 下载文件
@@ -110,30 +108,71 @@ async def process_document_pipeline(doc_id: int):
             )
         await asyncio.to_thread(_download_task)
         
-        # 2. 加载与切分 (CPU Bound / IO Bound)
+        # 2. 加载与切分 (Updated for Parent-Child Indexing)
         def _load_and_split_task():
+            # 定义子文档切分器 (Small Chunk)
+            # Config kb_chunk_size -> Parent Size
+            
+            parent_chunk_size = kb_chunk_size 
+            child_chunk_size = 200
+            child_overlap = 35
+            
+            parent_docs = []
+
+            # A. 生成 Parent Docs
             if original_suffix in [".pdf", ".docx", ".doc"]:
-                logger.info(f"检测到 {original_suffix} 文件，使用 Docling HybridChunker 处理...")
-                return load_and_chunk_docling_document(temp_file_path, chunk_size=kb_chunk_size)
+                logger.info(f"使用 Docling 解析 Parent Docs (Size={parent_chunk_size})...")
+                # 使用 Docling 生成较大的 Parent Chunks
+                parent_docs = load_and_chunk_docling_document(temp_file_path, chunk_size=parent_chunk_size)
             else:
-                logger.info(f"使用标准 Loader + RecursiveSplitter 处理 {original_suffix} 文件...")
+                logger.info(f"使用 BasicLoader 解析 Parent Docs...")
+                # 普通文件加载
                 raw_docs = load_single_document(temp_file_path)
-                return split_docs(raw_docs, kb_chunk_size, kb_chunk_overlap)
+                # 切分出 Parent
+                parent_docs = split_docs(raw_docs, parent_chunk_size, kb_chunk_overlap)
 
-        splitted_docs = await asyncio.to_thread(_load_and_split_task)
+            # B. 生成 Child Docs 并关联
+            logger.info(f"生成 Child Docs (Size={child_chunk_size}) 并建立父子关联...")
+            
+            child_splitter = RecursiveCharacterTextSplitter(
+                chunk_size=child_chunk_size,
+                chunk_overlap=child_overlap,
+                separators=["\n\n", "\n", "。", "！", "？"," ", ""]
+            )
+            
+            results = []
+            for p_doc in parent_docs:
+                parent_id = str(uuid.uuid4())
+                parent_content = p_doc.page_content
+                
+                # 切分 Child
+                child_chunks = child_splitter.split_documents([p_doc])
+                
+                for c_doc in child_chunks:
+                    # 继承元数据
+                    c_doc.metadata.update(p_doc.metadata)
+                    
+                    # 注入关键关联信息
+                    c_doc.metadata["doc_id"] = str(uuid.uuid4()) # Child Unique ID
+                    c_doc.metadata["parent_id"] = parent_id      # Link to Parent
+                    c_doc.metadata["parent_content"] = parent_content # Store Parent Content
+                    
+                    # 补充业务元数据
+                    c_doc.metadata["source"] = doc_filename
+                    c_doc.metadata["knowledge_id"] = doc_kb_id
+                    # 兼容 pyPDF
+                    if "page" in c_doc.metadata and "page_number" not in c_doc.metadata:
+                        c_doc.metadata["page_number"] = c_doc.metadata["page"]
+
+                    results.append(c_doc)
+            
+            return results
+
+        final_docs_to_ingest = await asyncio.to_thread(_load_and_split_task)
         
-        # 3. 注入通用元数据
-        for d in splitted_docs:
-            d.metadata["source"] = doc_filename
-            d.metadata["doc_id"] = doc_id
-            d.metadata["knowledge_id"] = doc_kb_id
-            if "page" in d.metadata and "page_number" not in d.metadata:
-                d.metadata["page_number"] = d.metadata["page"]#兼容pyPDFloader的写法
+        logger.info(f"文档处理完成。Parents: N/A -> Children: {len(final_docs_to_ingest)}")
 
-        logger.info(f"文档处理完成，共生成 {len(splitted_docs)} 个切片。")
-
-        # 4. 向量化与入库 ES (Network Bound)
-        # 注意: setup_embed_model 和 VectorStoreManager 初始化不需要 DB 连接
+        # 4. 向量化与入库 ES
         collection_name = f"kb_{kb_id}"
         
         def _vector_store_task():
@@ -143,13 +182,13 @@ async def process_document_pipeline(doc_id: int):
             vector_store = manager.get_vector_store()
             
             logger.info(f"正在向 ES 索引 {manager.index_name} 写入切片...")
-            # add_documents 是 LangChain ES Store 的方法，通常是 IO 操作
-            return vector_store.add_documents(splitted_docs)
+            # 注意：ES mapping 已经配置了 parent_content index: False
+            return vector_store.add_documents(final_docs_to_ingest)
 
         await asyncio.to_thread(_vector_store_task)
 
         # -----------------------------------------------------
-        # Phase 3: 完成状态更新 (Short DB Transaction)
+        # Phase 3: 完成状态更新
         # -----------------------------------------------------
         async with async_session_maker() as db:
             doc = await db.get(Document, doc_id)
@@ -161,8 +200,6 @@ async def process_document_pipeline(doc_id: int):
 
     except Exception as e:
         logger.error(f"文档 {doc_id} 处理失败: {e}", exc_info=True)
-        
-        # Error Handler: 重新获取 Session 记录错误
         async with async_session_maker() as db:
             doc = await db.get(Document, doc_id)
             if doc:
@@ -172,7 +209,6 @@ async def process_document_pipeline(doc_id: int):
                 await db.commit()
 
     finally:
-        # 清理临时文件
         if temp_file_path and os.path.exists(temp_file_path):
             try:
                 os.remove(temp_file_path)
