@@ -8,13 +8,16 @@ from typing import AsyncGenerator, List, Optional, Union, Dict, Any
 
 from langchain_core.documents import Document
 from langchain_core.runnables import RunnablePassthrough, RunnableLambda
+from langchain_core.messages import BaseMessage
 from langfuse.langchain import CallbackHandler 
 
 from app.services.generation.qa_service import QAService
 from app.services.retrieval.retrieval_service import RetrievalService
 from app.services.retrieval.vector_store_manager import VectorStoreManager
 from app.services.factories.retrieval_factory import RetrievalFactory
+from app.services.factories.llm_factory import setup_llm
 from app.services.rerank.rerank_service import RerankService
+from app.services.generation.rewrite_service import QueryRewriteService
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +26,8 @@ class RAGPipeline:
     def __init__(self, 
                  retrieval_service: RetrievalService, 
                  qa_service: QAService,
-                 rerank_service: RerankService
+                 rerank_service: RerankService,
+                 rewrite_service: QueryRewriteService
 
     ):
         """
@@ -35,6 +39,7 @@ class RAGPipeline:
         self.rerank_service = rerank_service
         self.langfuse_handler = CallbackHandler()
         self.generation_chain = self.qa_service.chain
+        self.rewrite_service = rewrite_service
         
         self.rag_chain = (
             {
@@ -69,10 +74,13 @@ class RAGPipeline:
             **kwargs
         )
 
+        rewrite_service = QueryRewriteService(llm=setup_llm("qwen-flash"))
+
         return cls(
             RetrievalService(retriever), 
             qa_service,
-            rerank_service
+            rerank_service,
+            rewrite_service
         )
 
     def _format_docs(self, docs: List[Document]) -> str:
@@ -131,47 +139,67 @@ class RAGPipeline:
     async def async_query(self, question: str, 
                           top_k: int = 3, 
                           threshold: float = None,
+                          chat_history: List[BaseMessage] = None,
                           **kwargs):
         """
         异步入口 (Standard: Recall -> Rerank -> Generate)
         :param top_k: 最终保留给 LLM 的切片数量 (Precision K)
         """
+        callbacks = {"callbacks": [self.langfuse_handler]}
+
+        search_query = await self.rewrite_service.rewrite(
+            question, chat_history or [], config=callbacks
+        )
+
         # 1. Recall (检索 50 条)
         # Retriever 已经在 build 时配置了 RECALL_TOP_K
         recall_docs = await self.retrieval_service.afetch(
-            question, 
-            config={"callbacks": [self.langfuse_handler]}
+            search_query, 
+            config=callbacks
         )
         
         # 2. Rerank (精排取 top_k)
         reranked_docs = await self.rerank_service.rerank_documents(
-            query=question,
+            query=search_query,
             docs=recall_docs,
             top_n=top_k,
             threshold=threshold 
         )
         
         # 3. Generate
-        inputs = {"question": question, **kwargs}
+        inputs = {
+            "question": question, 
+            "chat_history": chat_history, # 确保 Prompt 模板支持 history
+            **kwargs
+        }
+
         return await self._prepare_answer_async(inputs, reranked_docs)
 
     async def astream_with_sources(self, 
                                    query: str, 
                                    top_k: int = 3,
                                    threshold: float = None, 
+                                   chat_history: List[BaseMessage] = None,
                                    **kwargs) -> AsyncGenerator[Union[List[Document], str], None]:
         """
         流式生成 (支持 Rerank)
         """
+
+        callbacks = {"callbacks": [self.langfuse_handler]}
+
+        search_query = await self.rewrite_service.rewrite(
+            query, chat_history or [], config=callbacks
+        )
+
         # 1. Recall
         recall_docs = await self.retrieval_service.afetch(
-            query,
-            config={"callbacks": [self.langfuse_handler]}
+            search_query, 
+            config=callbacks
         )
-        
+
         # 2. Rerank
         reranked_docs = await self.rerank_service.rerank_documents(
-            query=query,
+            query=search_query, 
             docs=recall_docs,
             top_n=top_k,
             threshold=threshold
@@ -182,7 +210,12 @@ class RAGPipeline:
         
         # 3. Generate
         context = self._format_docs(reranked_docs)
-        inputs = {"question": query, "context": context, **kwargs}
+        inputs = {
+            "question": query, 
+            "context": context, 
+            "chat_history": chat_history, 
+            **kwargs
+        }
         
         async for chunk in self.generation_chain.astream(
         inputs,

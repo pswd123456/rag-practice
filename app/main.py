@@ -58,7 +58,7 @@ async def lifespan(app: FastAPI):
     
     logger.info(f"🛑 {settings.PROJECT_NAME} 正在关闭...")
     if app.state.redis_pool:
-        await app.state.redis_pool.cslose()
+        await app.state.redis_pool.close()
         logger.info("Redis 连接池已关闭。")
     if app.state.redis: 
         await app.state.redis.close()
