@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import datetime
 from typing import AsyncGenerator, Optional, List
 from fastapi import Depends, Request, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
@@ -9,6 +10,7 @@ from jose import jwt, JWTError
 from pydantic import ValidationError
 from sqlmodel.ext.asyncio.session import AsyncSession
 from arq import ArqRedis
+from redis.asyncio import Redis
 
 from app.core.config import settings
 from app.db.session import get_session
@@ -34,6 +36,11 @@ async def get_redis_pool(request: Request) -> ArqRedis:
     if not hasattr(request.app.state, "redis_pool"):
         raise RuntimeError("Redis pool not initialized in app state")
     return request.app.state.redis_pool
+
+async def get_redis(request: Request) -> Redis:
+    if not hasattr(request.app.state, "redis"):
+        raise RuntimeError("Redis client not initialized")
+    return request.app.state.redis
 
 async def get_current_user(
     token: str = Depends(reusable_oauth2),
@@ -118,7 +125,7 @@ def get_rag_pipeline_factory(
         # 5. Manager
         embed_model = setup_embed_model(embed_model_name)
         
-        # [Fix] 预先遍历所有知识库，确保它们的物理索引都存在
+        # 预先遍历所有知识库，确保它们的物理索引都存在
         # 这样即使某个知识库是空的，也不会导致 ES 抛出 "no such index"
         for single_name in collection_names:
             temp_manager = VectorStoreManager(single_name, embed_model)
@@ -139,3 +146,49 @@ def get_rag_pipeline_factory(
         return pipeline
         
     return create_pipeline
+
+async def check_rate_limits(
+    current_user: User = Depends(get_current_active_user),
+    redis: Redis = Depends(get_redis)
+):
+    """
+    [Rate Limiter] 基于每日配额的限流 (Requests & Tokens)
+    """
+    # 1. 获取当前日期作为 Key 的一部分 (e.g., "2023-10-27")
+    # 使用 UTC 还是本地时间取决于您的业务需求，这里建议与数据库时区保持一致
+    today = datetime.datetime.now().strftime("%Y-%m-%d")
+    user_id = current_user.id
+    
+    # ================= Check 1: Daily Requests =================
+    req_key = f"limit:req:{today}:{user_id}"
+    
+    # 获取用户个人的限制配置
+    user_req_limit = current_user.daily_request_limit
+    
+    # 原子递增
+    current_requests = await redis.incr(req_key)
+    
+    # 如果是今天第一次请求，设置 24小时+缓冲 过期时间，确保第二天自动失效
+    if current_requests == 1:
+        await redis.expire(req_key, 86400 + 3600) 
+    
+    if current_requests > user_req_limit:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Daily request limit exceeded ({user_req_limit} requests/day)."
+        )
+
+    # ================= Check 2: Daily Tokens =================
+    # Token 检查是"准入制"，只要当前已消耗的没超标，就允许开始新的对话
+    token_key = f"limit:token:{today}:{user_id}"
+    
+    user_token_limit = current_user.daily_token_limit
+    
+    current_tokens_str = await redis.get(token_key)
+    current_tokens = int(current_tokens_str) if current_tokens_str else 0
+    
+    if current_tokens >= user_token_limit:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Daily token quota exceeded ({user_token_limit} tokens/day)."
+        )

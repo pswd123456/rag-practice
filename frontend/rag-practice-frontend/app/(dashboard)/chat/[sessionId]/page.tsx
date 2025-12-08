@@ -1,4 +1,3 @@
-// frontend/rag-practice-frontend/app/(dashboard)/chat/[sessionId]/page.tsx
 "use client";
 
 import { useEffect, useState, useRef } from "react";
@@ -32,10 +31,8 @@ export default function ChatSessionPage() {
   const [loadingInitial, setLoadingInitial] = useState(true);
   const [streaming, setStreaming] = useState(false);
   
-  // Chat Settings (Local State)
   const [selectedModel, setSelectedModel] = useState("qwen-max");
-  const [selectedPrompt, setSelectedPrompt] = useState("rag-default"); // 🟢 [New]
-
+  
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -44,7 +41,6 @@ export default function ChatSessionPage() {
     }
   }, [sessionId]);
 
-  // ... (保持原有的 useEffects 和 initSession, refreshSessionInfo 不变) ...
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollIntoView({ behavior: "smooth" });
@@ -82,6 +78,7 @@ export default function ChatSessionPage() {
 
     let assistantMsgContent = "";
     let assistantSources: Source[] = [];
+    let tokenUsage = 0; // [New]
     
     setMessages((prev) => [
       ...prev,
@@ -92,8 +89,7 @@ export default function ChatSessionPage() {
       query: input,
       top_k: session?.top_k || 3,
       stream: true,
-      llm_model: selectedModel,
-      prompt_name: selectedPrompt // 🟢 Pass prompt_name
+      llm_model: selectedModel
     };
 
     await chatService.sendMessageStream(
@@ -101,16 +97,36 @@ export default function ChatSessionPage() {
       payload,
       (chunk) => {
         assistantMsgContent += chunk;
-        updateLastMessage(assistantMsgContent, assistantSources);
+        updateLastMessage(assistantMsgContent, assistantSources, tokenUsage);
       },
       (sources) => {
         assistantSources = sources;
-        updateLastMessage(assistantMsgContent, assistantSources);
+        updateLastMessage(assistantMsgContent, assistantSources, tokenUsage);
       },
-      (err) => {
-        toast.error("回复生成失败");
+      // [New] Usage Callback
+      (usage) => {
+        // 如果后端返回了 total_tokens (通常是 input + output)
+        tokenUsage = usage.total_tokens || (usage.input_tokens + usage.output_tokens);
+        updateLastMessage(assistantMsgContent, assistantSources, tokenUsage);
+      },
+      (err: any) => {
+        // [Fix] 针对 429 或其他错误的特定处理
+        const errMsg = err.message || "";
+        if (errMsg.includes("Daily request limit") || errMsg.includes("Daily token quota")) {
+          toast.error("已达到每日限流配额", { description: errMsg });
+        } else {
+          toast.error("回复生成失败", { description: errMsg });
+        }
+        
         setStreaming(false);
-        setMessages((prev) => prev.slice(0, -1));
+        // 如果出错，移除最后一条空消息 (或者保留并显示错误状态，这里选择移除)
+        setMessages((prev) => {
+           const last = prev[prev.length - 1];
+           if (last.role === "assistant" && !last.content) {
+             return prev.slice(0, -1);
+           }
+           return prev;
+        });
       },
       () => {
         setStreaming(false);
@@ -130,8 +146,7 @@ export default function ChatSessionPage() {
     );
   };
 
-  // ... (updateLastMessage, handleStop 保持不变) ...
-  const updateLastMessage = (content: string, sources?: Source[]) => {
+  const updateLastMessage = (content: string, sources?: Source[], tokenUsage?: number) => {
     setMessages((prev) => {
       const newHistory = [...prev];
       const lastIndex = newHistory.length - 1;
@@ -140,6 +155,7 @@ export default function ChatSessionPage() {
           ...newHistory[lastIndex],
           content: content,
           sources: sources,
+          token_usage: tokenUsage || newHistory[lastIndex].token_usage, // [New]
         };
       }
       return newHistory;
@@ -161,7 +177,7 @@ export default function ChatSessionPage() {
 
   return (
     <div className="relative flex flex-col h-full bg-zinc-50/50 dark:bg-zinc-950/50">
-      {/* Header */}
+      {/* Header Bar */}
       <div className="flex items-center justify-between px-6 py-2 border-b bg-background/80 backdrop-blur-sm sticky top-0 z-10 h-14">
         <div className="flex items-center gap-4">
           <div>
@@ -207,9 +223,6 @@ export default function ChatSessionPage() {
           selectedModel={selectedModel}
           onModelChange={setSelectedModel}
           modelOptions={MODEL_OPTIONS}
-          // 🟢 Pass Props
-          selectedPrompt={selectedPrompt}
-          onPromptChange={setSelectedPrompt}
         />
       </div>
     </div>

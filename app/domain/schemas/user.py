@@ -1,5 +1,6 @@
 from typing import Optional
 from pydantic import BaseModel, EmailStr
+from app.domain.models.user import UserPlan
 
 # 注册请求
 class UserCreate(BaseModel):
@@ -13,4 +14,8 @@ class UserRead(BaseModel):
     email: EmailStr
     full_name: Optional[str] = None
     is_active: bool
-    is_superuser: bool = False # 🟢 Fix: 暴露管理员状态1
+    is_superuser: bool = False 
+
+    plan: UserPlan
+    daily_request_limit: int
+    daily_token_limit: int

@@ -43,6 +43,7 @@ export const chatService = {
     payload: ChatRequest,
     onMessageCallback: (text: string) => void,
     onSourcesCallback: (sources: any[]) => void,
+    onUsageCallback: (usage: { input_tokens: number, output_tokens: number, total_tokens: number }) => void, // [New]
     onErrorCallback: (err: any) => void,
     onFinishCallback: () => void
   ) => {
@@ -60,7 +61,15 @@ export const chatService = {
       });
 
       if (!response.ok) {
-        throw new Error(`API Error: ${response.statusText}`);
+        // [Fix] 尝试解析错误详情，特别是为了捕获 429 限流信息
+        let errorMsg = `API Error: ${response.statusText}`;
+        try {
+          const errData = await response.json();
+          if (errData.detail) errorMsg = errData.detail;
+        } catch (e) {
+          // ignore json parse error
+        }
+        throw new Error(errorMsg);
       }
 
       if (!response.body) throw new Error("No response body");
@@ -98,6 +107,13 @@ export const chatService = {
                 onSourcesCallback(sources);
               } catch (e) {
                 console.error("Failed to parse sources", e);
+              }
+            } else if (eventType === "usage") { // [New] 处理 usage 事件
+              try {
+                const usage = JSON.parse(dataRaw);
+                onUsageCallback(usage);
+              } catch (e) {
+                console.error("Failed to parse usage", e);
               }
             }
           }

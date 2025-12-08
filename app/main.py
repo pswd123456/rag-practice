@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware # 🟢 引入 CORS 中间件
 from arq import create_pool
 from arq.connections import RedisSettings
+from redis.asyncio import Redis
 
 from app.api import api_router
 from app.db.session import create_db_and_tables
@@ -22,6 +23,8 @@ async def lifespan(app: FastAPI):
     logger.info(f"🚀 {settings.PROJECT_NAME} 启动中...")
     
     app.state.redis_pool = None
+    #初始化标准 Redis 客户端用于缓存和限流
+    app.state.redis = None
 
     try:
         await create_db_and_tables()
@@ -33,6 +36,12 @@ async def lifespan(app: FastAPI):
         )
         logger.info("✅ Redis 连接池就绪。")
 
+        app.state.redis = Redis.from_url(
+            f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}", 
+            decode_responses=True
+        )
+        logger.info("✅ Redis 缓存客户端就绪。")
+
         logger.info("⏳ 正在检查 Elasticsearch 连接...")
         await asyncio.to_thread(wait_for_es)
 
@@ -40,6 +49,8 @@ async def lifespan(app: FastAPI):
         logger.critical(f"❌ 服务启动自检失败: {e}", exc_info=True)
         if app.state.redis_pool:
             await app.state.redis_pool.close()
+        if app.state.redis:
+            await app.state.redis.close()
         raise e
     
     logger.info("✅ API 服务已就绪 (DB & ES & Redis Connected)。")
@@ -47,8 +58,10 @@ async def lifespan(app: FastAPI):
     
     logger.info(f"🛑 {settings.PROJECT_NAME} 正在关闭...")
     if app.state.redis_pool:
-        await app.state.redis_pool.close()
+        await app.state.redis_pool.cslose()
         logger.info("Redis 连接池已关闭。")
+    if app.state.redis: 
+        await app.state.redis.close()
 
 app = FastAPI(
     title=settings.PROJECT_NAME,

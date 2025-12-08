@@ -12,7 +12,9 @@ export interface UserRead {
   email: string;
   full_name?: string;
   is_active: boolean;
-  is_superuser: boolean; // [New]
+  is_superuser: boolean;
+  daily_request_limit?: number; // [New]
+  daily_token_limit?: number;   // [New]
 }
 
 // === Knowledge Base Types ===
@@ -63,7 +65,7 @@ export interface ChatSession {
   id: string; // UUID
   title: string;
   icon: string; 
-  top_k: number; // [New]
+  top_k: number;
   knowledge_id: number;
   knowledge_ids: number[]; 
   user_id: number;
@@ -74,7 +76,7 @@ export interface ChatSession {
 export interface ChatSessionUpdate {
   title?: string;
   icon?: string;
-  top_k?: number; // [New]
+  top_k?: number;
   knowledge_ids?: number[];
 }
 
@@ -87,12 +89,13 @@ export interface Source {
 }
 
 export interface Message {
-  id?: number; // 乐观更新时可能暂时没有 ID
+  id?: number; 
   role: "user" | "assistant";
   content: string;
   sources?: Source[];
   created_at?: string;
-  isStreaming?: boolean; // 前端辅助字段，标记是否正在流式生成
+  isStreaming?: boolean;
+  token_usage?: number; // [New] Token 用量
 }
 
 export interface ChatRequest {
@@ -101,10 +104,9 @@ export interface ChatRequest {
   llm_model?: string;
   rerank_model_name?: string;
   stream?: boolean;
-  prompt_name?: string;
 }
 
-// === Evaluation Types [New] ===
+// === Evaluation Types ===
 
 export interface Testset {
   id: number;

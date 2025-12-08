@@ -3,13 +3,14 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
-import "katex/dist/katex.min.css"; // 引入 Katex 样式
+import "katex/dist/katex.min.css"; 
 
-import { Bot, User, FileText, ChevronDown, ChevronRight, Copy, Check } from "lucide-react";
+import { Bot, User, FileText, ChevronDown, ChevronRight, Copy, Check, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Message, Source } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface MessageBubbleProps {
   message: Message;
@@ -45,9 +46,26 @@ export function MessageBubble({ message }: MessageBubbleProps) {
 
       {/* Content Area */}
       <div className={cn("flex-1 space-y-2 overflow-hidden", isUser ? "text-right" : "text-left")}>
-        {/* Name & Time */}
+        {/* Name & Time & Token Usage */}
         <div className={cn("flex items-center gap-2 text-xs text-muted-foreground", isUser && "flex-row-reverse")}>
           <span className="font-semibold">{isUser ? "You" : "RAG Assistant"}</span>
+          
+          {/* [New] Token Usage Badge */}
+          {!isUser && message.token_usage && message.token_usage > 0 && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger>
+                  <Badge variant="outline" className="h-5 px-1.5 gap-1 text-[10px] font-normal text-muted-foreground border-border/50 hover:bg-muted/50 cursor-help">
+                    <Zap className="h-3 w-3 text-yellow-500/70" />
+                    {message.token_usage}
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>本次回答消耗 Token 数</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
         </div>
 
         {/* Message Body */}
@@ -59,7 +77,6 @@ export function MessageBubble({ message }: MessageBubbleProps) {
               remarkPlugins={[remarkGfm, remarkMath]}
               rehypePlugins={[rehypeKatex]}
               components={{
-                // 自定义 Markdown 渲染以适配 Shadcn 风格
                 p: ({ children }) => <p className="mb-2 last:mb-0 leading-7">{children}</p>,
                 ul: ({ children }) => <ul className="my-2 ml-4 list-disc">{children}</ul>,
                 ol: ({ children }) => <ol className="my-2 ml-4 list-decimal">{children}</ol>,

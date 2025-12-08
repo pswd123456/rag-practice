@@ -1,4 +1,5 @@
 # app/api/routes/chat.py
+import datetime
 import json
 import logging
 import uuid
@@ -6,6 +7,7 @@ from typing import List, AsyncGenerator
 from fastapi import APIRouter, Depends, HTTPException, Body
 from fastapi.responses import StreamingResponse
 from sqlmodel.ext.asyncio.session import AsyncSession
+from redis.asyncio import Redis
 
 from app.api import deps
 from app.domain.schemas.chat import (
@@ -97,13 +99,14 @@ async def get_session_messages(
 
 # ------------------ Chat Interaction ------------------
 
-@router.post("/sessions/{session_id}/completion")
+@router.post("/sessions/{session_id}/completion", dependencies=[Depends(deps.check_rate_limits)])
 async def chat_completion(
     session_id: uuid.UUID,
     request: ChatRequest,
     db: AsyncSession = Depends(deps.get_db_session),
     current_user: User = Depends(deps.get_current_active_user),
-    pipeline_factory = Depends(deps.get_rag_pipeline_factory)
+    pipeline_factory = Depends(deps.get_rag_pipeline_factory),
+    redis: Redis = Depends(deps.get_redis)
 ):
     """
     核心对话接口
@@ -153,6 +156,7 @@ async def chat_completion(
                 top_k=final_top_k,
                 chat_history=chat_history
             ):
+                
                 if isinstance(chunk, list):
                     # Sources
                     for doc in chunk:
@@ -176,6 +180,14 @@ async def chat_completion(
                     full_answer += chunk
                     yield f"event: message\ndata: {json.dumps(chunk)}\n\n"
             
+            if total_tokens > 0:
+                today = datetime.datetime.now().strftime("%Y-%m-%d")
+                token_key = f"limit:token:{today}:{current_user.id}"
+                
+                new_val = await redis.incrby(token_key, total_tokens)
+                if new_val == total_tokens:
+                    await redis.expire(token_key, 86400 + 3600)
+                    
             if full_answer:
                 await chat_service.save_message(
                     db, 

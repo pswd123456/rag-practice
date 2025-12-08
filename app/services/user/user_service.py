@@ -2,7 +2,8 @@ from typing import Optional
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.domain.models.user import User
+from app.domain.models.user import User, UserPlan
+from app.core.config import settings
 from app.core.security import get_password_hash, verify_password
 
 class UserService:
@@ -13,13 +14,26 @@ class UserService:
         return result.first()
 
     @staticmethod
-    async def create_user(db: AsyncSession, email: str, password: str, full_name: str = None) -> User:
+    async def create_user(
+        db: AsyncSession, 
+        email: str, 
+        password: str, 
+        full_name: str = None,
+        plan: UserPlan = UserPlan.FREE # [New] 默认为 FREE
+    ) -> User:
         hashed = get_password_hash(password)
+        
+        # [New] 根据 Plan 获取默认配置
+        plan_config = settings.PLANS.get(plan.value, settings.PLANS["FREE"])
+        
         db_obj = User(
             email=email,
             hashed_password=hashed,
             full_name=full_name,
-            is_active=True
+            is_active=True,
+            plan=plan,
+            daily_request_limit=plan_config["daily_request_limit"],
+            daily_token_limit=plan_config["daily_token_limit"]
         )
         db.add(db_obj)
         await db.commit()
@@ -36,4 +50,26 @@ class UserService:
             return None
         if not verify_password(password, user.hashed_password):
             return None
+        return user
+    
+    @staticmethod
+    async def upgrade_plan(db: AsyncSession, user_id: int, new_plan: UserPlan) -> User:
+        """
+        升级用户套餐
+        """
+        user = await db.get(User, user_id)
+        if not user:
+            raise ValueError("User not found")
+            
+        plan_config = settings.PLANS.get(new_plan.value)
+        if not plan_config:
+            raise ValueError(f"Invalid plan: {new_plan}")
+            
+        user.plan = new_plan
+        user.daily_request_limit = plan_config["daily_request_limit"]
+        user.daily_token_limit = plan_config["daily_token_limit"]
+        
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
         return user

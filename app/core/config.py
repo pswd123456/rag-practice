@@ -1,6 +1,6 @@
 import sys
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 from dotenv import find_dotenv
 from pydantic import computed_field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -30,6 +30,25 @@ class Settings(BaseSettings):
     # --- Redis 配置 ---
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
+
+    # rate limit
+    DEFAULT_DAILY_REQUEST_LIMIT: int = 10
+    DEFAULT_DAILY_TOKEN_LIMIT: int = 10000
+
+    PLANS: Dict[str, Dict[str, int]] = {
+    "FREE": {
+        "daily_request_limit": 10,
+        "daily_token_limit": 10_000
+    },
+    "PRO": {
+        "daily_request_limit": 100,
+        "daily_token_limit": 1_000_000
+    },
+    "ENTERPRISE": {
+        "daily_request_limit": 1000,
+        "daily_token_limit": 10_000_000
+    }
+    }
 
     # queue name
     DEFAULT_QUEUE_NAME: str = "arq:queue"
