@@ -11,6 +11,7 @@ from langchain_core.documents import Document
 from langchain_core.runnables import RunnablePassthrough, RunnableLambda
 from langchain_core.messages import BaseMessage
 from langfuse.langchain import CallbackHandler 
+from langfuse import observe 
 
 from app.services.generation.qa_service import QAService
 from app.services.retrieval.retrieval_service import RetrievalService
@@ -96,7 +97,6 @@ class RAGPipeline:
     def _format_docs(self, docs: List[Document]) -> str:
         """
         [Smart Truncation v2] 智能截断策略 (Token Aware)
-        基于精确的 Token 计数和 Rerank 分数动态截断。
         """
     
         max_total_tokens = settings.MAX_TOTAL_TOKENS    
@@ -109,7 +109,6 @@ class RAGPipeline:
 
         for doc in docs:
             # 1. 获取或计算 Token 数
-            # 优先使用 Ingestion 阶段预计算的准确值
             if "token_count" in doc.metadata:
                 doc_tokens = doc.metadata["token_count"]
             else:
@@ -119,11 +118,10 @@ class RAGPipeline:
             
             # 2. 预判是否超限
             if current_tokens + doc_tokens > max_total_tokens:
-                # 只有在 Context 还没填满 90% 且文档质量极高时，才允许最后一次溢出
                 if score > HIGH_QUALITY_THRESHOLD and current_tokens < max_total_tokens * 0.9:
                     logger.info(f"保留高分文档 (Score: {score:.3f}, Tokens: {doc_tokens})，尽管即将超限 (Current: {current_tokens})。")
                     valid_docs.append(doc.page_content)
-                    break # 强行塞入这一篇后停止
+                    break 
                 else:
                     logger.warning(f"达到 Token 上限 ({current_tokens}/{max_total_tokens})，截断后续内容。")
                     break
@@ -150,6 +148,7 @@ class RAGPipeline:
         )
         return answer, docs
 
+    @observe(name="rag_pipeline_run", as_type="chain")
     async def async_query(self, question: str, 
                           top_k: int = 3, 
                           threshold: float = None,
@@ -157,7 +156,6 @@ class RAGPipeline:
                           **kwargs):
         """
         异步入口 (Standard: Recall -> Rerank -> Generate)
-        :param top_k: 最终保留给 LLM 的切片数量 (Precision K)
         """
         callbacks = {"callbacks": [self.langfuse_handler]}
 
@@ -165,13 +163,13 @@ class RAGPipeline:
             question, chat_history or [], config=callbacks
         )
 
-        # 1. Recall (检索 50 条 Children -> Collapse to Parents)
+        # 1. Recall
         recall_docs = await self.retrieval_service.afetch(
             search_query, 
             config=callbacks
         )
         
-        # 2. Rerank (对 Parents 进行精排)
+        # 2. Rerank
         reranked_docs = await self.rerank_service.rerank_documents(
             query=search_query,
             docs=recall_docs,
@@ -190,7 +188,7 @@ class RAGPipeline:
 
     async def astream_with_sources(self, 
                                    query: str, 
-                                   top_k: int = 3,
+                                   top_k: int = 3, 
                                    threshold: float = None, 
                                    chat_history: List[BaseMessage] = None,
                                    **kwargs) -> AsyncGenerator[Union[List[Document], str], None]:
@@ -204,13 +202,13 @@ class RAGPipeline:
             query, chat_history or [], config=callbacks
         )
 
-        # 1. Recall (Children -> Parents)
+        # 1. Recall
         recall_docs = await self.retrieval_service.afetch(
             search_query, 
             config=callbacks
         )
 
-        # 2. Rerank (Parents)
+        # 2. Rerank
         reranked_docs = await self.rerank_service.rerank_documents(
             query=search_query, 
             docs=recall_docs,
@@ -218,10 +216,9 @@ class RAGPipeline:
             threshold=threshold
         )
         
-        # Yield 精排后的文档
         yield reranked_docs
         
-        # 3. Generate (Smart Truncation inside _format_docs)
+        # 3. Generate
         context = self._format_docs(reranked_docs)
         inputs = {
             "question": query, 

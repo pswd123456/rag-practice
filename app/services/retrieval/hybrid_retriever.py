@@ -7,8 +7,8 @@ from langchain_core.callbacks import CallbackManagerForRetrieverRun
 from app.services.retrieval.vector_store_manager import VectorStoreManager
 from app.services.retrieval.fusion import rrf_fusion
 
-from langfuse import observe
-# 初始化 Logger
+from langfuse import observe 
+
 logger = logging.getLogger(__name__)
 
 class ESHybridRetriever(BaseRetriever):
@@ -20,7 +20,7 @@ class ESHybridRetriever(BaseRetriever):
     store_manager: VectorStoreManager
     top_k: int = 4
     knowledge_ids: Optional[List[int]] = None 
-    rerank_service: Optional[Any] = None # 用于 Pipeline 可能需要的引用，Retriever 本身主要做 Recall
+    rerank_service: Optional[Any] = None 
 
     @observe(name="es_search_execution", as_type="span")
     def _execute_es_search(self, client, index_name: str, body: Dict[str, Any], search_type: str) -> Dict[str, Any]:
@@ -30,6 +30,50 @@ class ESHybridRetriever(BaseRetriever):
         response = client.search(index=index_name, body=body)
         return response.body if hasattr(response, 'body') else response
 
+    @observe(name="parent_child_collapse", as_type="span")
+    def _collapse_documents(self, fused_child_docs: List[Document]) -> List[Document]:
+        """
+        [Trace Node] 执行父子文档折叠 (Collapse)
+        将多个属于同一父文档的 Child Chunks 聚合，返回父文档内容。
+        """
+        seen_parent_ids = set()
+        unique_parent_docs = []
+        
+        logger.debug(f"Collapsing {len(fused_child_docs)} child docs...")
+
+        for doc in fused_child_docs:
+            parent_id = doc.metadata.get("parent_id")
+            parent_content = doc.metadata.get("parent_content")
+            
+            # 如果没有 parent info，直接使用 child 本身
+            if not parent_id:
+                doc_id = doc.metadata.get("doc_id") or str(hash(doc.page_content))
+                if doc_id not in seen_parent_ids:
+                    seen_parent_ids.add(doc_id)
+                    unique_parent_docs.append(doc)
+                continue
+            
+            # 核心折叠逻辑
+            if parent_id in seen_parent_ids:
+                continue 
+            
+            seen_parent_ids.add(parent_id)
+            
+            # 构造新的 Document，内容替换为 Parent Content
+            new_doc = Document(
+                page_content=parent_content,
+                metadata=doc.metadata.copy()
+            )
+            # 清理 metadata
+            new_doc.metadata.pop("parent_content", None)
+            
+            unique_parent_docs.append(new_doc)
+            
+            if len(unique_parent_docs) >= self.top_k * 2: 
+                break
+        
+        logger.info(f"Collapse completed: {len(fused_child_docs)} children -> {len(unique_parent_docs)} parents")
+        return unique_parent_docs
 
     def _get_relevant_documents(
         self, query: str, *, run_manager: CallbackManagerForRetrieverRun
@@ -48,16 +92,14 @@ class ESHybridRetriever(BaseRetriever):
                 filter_clause.append({"terms": {"metadata.knowledge_id": self.knowledge_ids}})
             
             # [Optimization] _source filtering
-            # 只需要 Parent 内容和 ID 用于折叠，不需要 Child 的 text 和 vector
             source_filter = {
                 "includes": ["metadata.parent_content", "metadata.parent_id", "metadata.source", "metadata.page_number", "metadata.knowledge_id", "text"],
                 "excludes": ["vector"] 
             }
 
             # -------------------------------------------------------
-            # A. 向量检索 (Vector Search / KNN) - 针对 Child Chunk
+            # A. 向量检索 (Vector Search / KNN)
             # -------------------------------------------------------
-            # 扩大召回数量以便折叠 (e.g. top_k * 5)
             recall_k = max(50, self.top_k * 10)
             
             query_vector = embed_model.embed_query(query)
@@ -76,7 +118,7 @@ class ESHybridRetriever(BaseRetriever):
             vec_docs = self._parse_es_response(res_vec)
 
             # -------------------------------------------------------
-            # B. 关键词检索 (BM25) - 针对 Child Chunk
+            # B. 关键词检索 (BM25)
             # -------------------------------------------------------
             keyword_body = {
                 "query": {
@@ -102,51 +144,14 @@ class ESHybridRetriever(BaseRetriever):
             kw_docs = self._parse_es_response(res_kw)
 
             # -------------------------------------------------------
-            # C. RRF 融合 (针对 Child 进行打分)
+            # C. RRF 融合
             # -------------------------------------------------------
             fused_child_docs = rrf_fusion([vec_docs, kw_docs], k=60)
             
             # -------------------------------------------------------
-            # D. [Collapse] 聚合去重：将 Child 折叠为 Parent
+            # D. [Collapse] 聚合去重 (Traced)
             # -------------------------------------------------------
-            seen_parent_ids = set()
-            unique_parent_docs = []
-            
-            for doc in fused_child_docs:
-                parent_id = doc.metadata.get("parent_id")
-                parent_content = doc.metadata.get("parent_content")
-                
-                # 如果没有 parent info，直接使用 child 本身
-                if not parent_id:
-                    # 使用 doc_id 或 content hash 防止重复
-                    doc_id = doc.metadata.get("doc_id") or str(hash(doc.page_content))
-                    if doc_id not in seen_parent_ids:
-                        seen_parent_ids.add(doc_id)
-                        unique_parent_docs.append(doc)
-                    continue
-                
-                # 核心折叠逻辑
-                if parent_id in seen_parent_ids:
-                    continue # 跳过该 Parent 的其他 Child
-                
-                seen_parent_ids.add(parent_id)
-                
-                # 构造新的 Document，内容替换为 Parent Content
-                # 保留其他元数据 (如 source, page_number) 供引用显示
-                # 注意：score 是 Child 的最高分，这正好代表了该 Parent 最相关的程度
-                new_doc = Document(
-                    page_content=parent_content,
-                    metadata=doc.metadata.copy()
-                )
-                # 清理 metadata，避免日志过大，且 parent_content 已经移到 page_content 了
-                new_doc.metadata.pop("parent_content", None)
-                
-                unique_parent_docs.append(new_doc)
-                
-                if len(unique_parent_docs) >= self.top_k * 2: # 稍微多保留一点给 Rerank
-                    break
-
-            result = unique_parent_docs
+            result = self._collapse_documents(fused_child_docs)
             
             logger.info(f"Hybrid Retrieval (w/ Collapse) completed. Merged to {len(result)} parent docs.")
             return result
@@ -166,16 +171,10 @@ class ESHybridRetriever(BaseRetriever):
             if "id" not in metadata:
                  metadata["id"] = hit["_id"]
             
-            # Flatten parent_content if it exists in metadata (for easier access)
-            # In ES mapping, parent_content is inside metadata object
-            
-            # ES _source returns: {"text": "...", "metadata": {"parent_id": "...", "parent_content": "..."}}
-            # So it is already in metadata dict.
-            
             metadata["_es_score"] = hit.get("_score")
             
             docs.append(Document(
-                page_content=source.get("text", ""), # Child text
+                page_content=source.get("text", ""), 
                 metadata=metadata
             ))
         return docs

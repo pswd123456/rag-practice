@@ -2,6 +2,7 @@ import logging
 import httpx
 from typing import List
 from langchain_core.documents import Document
+from langfuse import observe, get_client # 🟢 v3 Import
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -22,6 +23,7 @@ class RerankService:
         # 设置合理的超时时间，Rerank 计算量大，建议 10s 以上
         self.timeout = httpx.Timeout(30.0, connect=2.0)
 
+    @observe(name="rerank_documents", as_type="generation")
     async def rerank_documents(
         self, 
         query: str, 
@@ -42,16 +44,23 @@ class RerankService:
         
         target_threshold = threshold if threshold is not None else settings.RERANK_THRESHOLD
         
+        try:
+            langfuse = get_client()
+           
+            langfuse.update_current_span(
+                input={"query": query, "doc_count": len(docs)},
+                metadata={"top_n": top_n, "threshold": target_threshold}
+            )
+        except Exception as e:
+            logger.warning(f"Langfuse update failed: {e}")
+
         # 1. 构造请求 Payload
-        # TEI API 格式: POST /rerank
-        # {"query": "...", "texts": ["...", "..."], "truncate": true}
         texts = [d.page_content for d in docs]
         
         payload = {
             "query": query,
             "texts": texts,
-            "truncate": True,  # 自动截断超长文本，防止报错
-            # "model_id": self.model_name # TEI 单模型部署时通常不需要
+            "truncate": True,  
         }
 
         try:
@@ -62,32 +71,33 @@ class RerankService:
                 )
                 response.raise_for_status()
                 
-                # 2. 解析响应
-                # 格式: [{"index": 0, "score": 0.9}, {"index": 1, "score": 0.1}, ...]
                 results = response.json()
-                
-                # 3. 排序逻辑
-                # 虽然 TEI 通常已经排好序返回，但显式再排一次更安全
                 results.sort(key=lambda x: x["score"], reverse=True)
                 
                 reranked_docs = []
                 for item in results:
                     score = item["score"]
                     if score < target_threshold:
-                        continue # 跳过低分文档
+                        continue 
 
                     original_index = item["index"]
                     doc = docs[original_index]
                     doc.metadata["rerank_score"] = score
                     reranked_docs.append(doc)
                 
-                # 4. 截断返回
                 final_docs = reranked_docs[:top_n]
                 
                 logger.info(f"Rerank 成功: 输入 {len(docs)} -> 输出 {len(final_docs)} (Top Score: {results[0]['score']:.4f})")
+                
+                try:
+                    langfuse.update_current_span(
+                        output={"final_count": len(final_docs), "top_score": results[0]['score'] if results else 0}
+                    )
+                except Exception:
+                    pass
+                
                 return final_docs
 
         except Exception as e:
             logger.error(f"❌ Rerank 服务调用失败，降级为原始顺序: {e}")
-            # 降级策略：返回原始列表的前 N 个
             return docs[:top_n]
