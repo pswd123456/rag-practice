@@ -57,7 +57,7 @@ class Settings(BaseSettings):
 
     # retrieval
     RECALL_TOP_K: int = 50
-    TOP_K: int = 3
+    TOP_K: int = 5
     CHUNK_SIZE: int = 500
     CHUNK_OVERLAP: int = 50
 

@@ -1,10 +1,11 @@
 import logging
 from typing import List, Dict, Any
 from langchain_core.documents import Document
-
+from langfuse import observe
 # 初始化 Logger
 logger = logging.getLogger(__name__)
 
+@observe
 def rrf_fusion(
     list_of_list_docs: List[List[Document]], 
     k: int = 60, 
