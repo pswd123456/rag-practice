@@ -184,11 +184,18 @@ class RAGPipeline:
         context = self._format_docs(reranked_docs)
         inputs = {"question": query, "context": context, **kwargs}
         
-        async for token in self.generation_chain.astream(
-            inputs,
-            config={"callbacks": [self.langfuse_handler]}
+        async for chunk in self.generation_chain.astream(
+        inputs,
+        config={"callbacks": [self.langfuse_handler]}
         ):
-            yield token
+            # 1. 提取文本内容并 Yield 给前端
+            if chunk.content:
+                yield chunk.content
+        
+            # 2. 捕获 Usage 元数据 (通常在最后一个 chunk)
+            if chunk.usage_metadata:
+                # 以特殊字典形式 Yield 出去，供 Route 层捕获
+                yield {"token_usage_payload": chunk.usage_metadata}
     def get_retrieval_service(self) -> RetrievalService:
         return self.retrieval_service
 

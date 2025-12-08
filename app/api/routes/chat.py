@@ -146,6 +146,7 @@ async def chat_completion(
         async def response_generator():
             full_answer = ""
             sources_data = []
+            total_tokens = 0
             
             async for chunk in rag_chain.astream_with_sources(
                 request.query, 
@@ -166,13 +167,23 @@ async def chat_completion(
                     
                     yield f"event: sources\ndata: {json.dumps(sources_data, ensure_ascii=False)}\n\n"
                 
+                elif isinstance(chunk, dict) and "token_usage_payload" in chunk:
+                    usage = chunk["token_usage_payload"]
+                    # 累加 input 和 output token
+                    total_tokens = usage.get("input_tokens", 0) + usage.get("output_tokens", 0)
+
                 elif isinstance(chunk, str):
                     full_answer += chunk
                     yield f"event: message\ndata: {json.dumps(chunk)}\n\n"
             
             if full_answer:
                 await chat_service.save_message(
-                    db, session_id, "assistant", full_answer, sources=sources_data
+                    db, 
+                    session_id, 
+                    "assistant", 
+                    full_answer, 
+                    sources=sources_data,
+                    token_usage=total_tokens
                 )
 
         return StreamingResponse(response_generator(), media_type="text/event-stream")

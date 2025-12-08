@@ -55,7 +55,7 @@ class QAService:
         self.output_parser = StrOutputParser()
         
         # 构建 Chain: Dict -> Prompt -> LLM -> String
-        self.chain = self.prompt | self.llm | self.output_parser
+        self.chain = self.prompt | self.llm 
         
         logger.debug("QAService (GenerationNode) 构建完成。")
 
