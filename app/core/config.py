@@ -72,7 +72,7 @@ class Settings(BaseSettings):
     # rerank service
     RERANK_BASE_URL: str = "http://rerank-service:80" 
     RERANK_MODEL_NAME: str = "BAAI/bge-reranker-v2-m3"
-    RERANK_THRESHOLD: float = 0.3
+    RERANK_THRESHOLD: float = 0.0
 
     # log
     LOG_DIR: Path = PROJECT_ROOT / "logs"

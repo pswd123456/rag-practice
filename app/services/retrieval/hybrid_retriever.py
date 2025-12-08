@@ -7,6 +7,7 @@ from langchain_core.callbacks import CallbackManagerForRetrieverRun
 from app.services.retrieval.vector_store_manager import VectorStoreManager
 from app.services.retrieval.fusion import rrf_fusion
 
+from langfuse import observe
 # 初始化 Logger
 logger = logging.getLogger(__name__)
 
@@ -17,7 +18,20 @@ class ESHybridRetriever(BaseRetriever):
     """
     store_manager: VectorStoreManager
     top_k: int = 4
-    knowledge_ids: Optional[List[int]] = None # [Change] 支持 ID 列表
+    knowledge_ids: Optional[List[int]] = None 
+
+    @observe(name="es_search_execution", as_type="span")
+    def _execute_es_search(self, client, index_name: str, body: Dict[str, Any], search_type: str) -> Dict[str, Any]:
+        """
+        执行 ES 搜索并被 Langfuse 追踪。
+        Input 会自动记录 index_name, body, search_type
+        Output 会自动记录 ES 返回的完整 JSON
+        """
+        # 执行原生搜索
+        response = client.search(index=index_name, body=body)
+        
+        return response.body if hasattr(response, 'body') else response
+
 
     def _get_relevant_documents(
         self, query: str, *, run_manager: CallbackManagerForRetrieverRun
@@ -57,7 +71,12 @@ class ESHybridRetriever(BaseRetriever):
             
             logger.debug(f"Executing ES Vector Search on index: {index_name}")
             # index_name 可能包含逗号 (e.g. "rag_kb_1,rag_kb_2")，ES Client 原生支持
-            res_vec = client.search(index=index_name, body=vector_body)
+            res_vec = self._execute_es_search(
+                client=client, 
+                index_name=index_name, 
+                body=vector_body, 
+                search_type="vector"
+            )
             vec_docs = self._parse_es_response(res_vec)
             
             logger.info(f"Vector Branch returned {len(vec_docs)} docs.")
@@ -86,7 +105,12 @@ class ESHybridRetriever(BaseRetriever):
             }
             
             logger.debug(f"Executing ES Keyword Search on index: {index_name}")
-            res_kw = client.search(index=index_name, body=keyword_body)
+            res_kw = self._execute_es_search(
+                client=client, 
+                index_name=index_name, 
+                body=keyword_body, 
+                search_type="keyword"
+            )
             kw_docs = self._parse_es_response(res_kw)
             
             logger.info(f"Keyword Branch returned {len(kw_docs)} docs.")

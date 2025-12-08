@@ -26,7 +26,8 @@ class VectorStoreManager:
         self.raw_collection_name = collection_name
         self.embed_model = embed_model
         self.client = get_es_client()
-        
+        self._verified_indices = set()
+
         # 处理多索引情况 (e.g., "kb_1,kb_2")
         if "," in collection_name:
             # 拼接完整索引名: rag_kb_1,rag_kb_2
@@ -62,10 +63,14 @@ class VectorStoreManager:
         """
         if self.is_multi_index:
             return
-
-        if self.client.indices.exists(index=self.index_name):
+        
+        if self.index_name in self._verified_indices:
             return
 
+        if self.client.indices.exists(index=self.index_name):
+            self._verified_indices.add(self.index_name) 
+            return
+        
         logger.info(f"正在创建 Elasticsearch 索引: {self.index_name}")
         
         mapping_body = {
@@ -96,6 +101,7 @@ class VectorStoreManager:
 
         try:
             self.client.indices.create(index=self.index_name, body=mapping_body)
+            self._verified_indices.add(self.index_name)
             logger.info(f"索引 {self.index_name} 创建成功。")
         except Exception as e:
             logger.error(f"创建索引 {self.index_name} 失败: {e}")

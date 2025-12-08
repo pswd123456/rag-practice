@@ -100,14 +100,13 @@ class DoclingLoader:
 
     def load(self) -> List[Document]:
         """
-        (Legacy) 加载文档并转换为单一的 Markdown LangChain Document。
-        适用于后续使用 RecursiveSplitter 的场景。
+        加载文档并转换为单一的 Markdown LangChain Document。
         """
         return self._process_doc(chunking=False)
 
     def load_and_chunk(self, chunk_size: int = 512, chunk_overlap: int = 50) -> List[Document]:
         """
-        [New] 加载并使用 HybridChunker 进行切片。
+        加载并使用 HybridChunker 进行切片。
         
         :param chunk_size: Token 限制 (HybridChunker 使用 Tokenizer 计数)
         :param chunk_overlap: 这里的 overlap HybridChunker 不一定完全遵循，它有自己的逻辑
@@ -212,7 +211,7 @@ class DoclingLoader:
                 logger.info(f"HybridChunker 生成了 {len(final_docs)} 个切片。")
                 
             else:
-                # === Legacy Logic: 全文 Markdown ===
+                # === 全文 Markdown ===
                 metadata = {
                     "source": str(self.file_path),
                     "filename": Path(self.file_path).name,
