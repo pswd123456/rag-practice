@@ -23,7 +23,6 @@ def get_es_client() -> Elasticsearch:
         "request_timeout": settings.ES_TIMEOUT,
         "max_retries": 3,
         "retry_on_timeout": True,
-        "max_connections": settings.ES_MAX_CONNECTIONS
     }
 
     if settings.ES_USER and settings.ES_PASSWORD:
