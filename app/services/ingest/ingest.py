@@ -9,6 +9,7 @@ import tempfile
 from pathlib import Path
 from sqlmodel import select
 
+import tiktoken
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document as LangChainDocument
 
@@ -108,12 +109,18 @@ async def process_document_pipeline(doc_id: int):
             )
         await asyncio.to_thread(_download_task)
         
-        # 2. 加载与切分 (Updated for Parent-Child Indexing)
+        # 2. 加载与切分 (Updated for Parent-Child Indexing & Token Counting)
         def _load_and_split_task():
+            # 初始化 Tokenizer (cl100k_base 适用于 GPT-4, Qwen, DeepSeek 等)
+            try:
+                tokenizer = tiktoken.get_encoding("cl100k_base")
+            except Exception:
+                # Fallback if specific encoding fails
+                tokenizer = tiktoken.get_encoding("cl100k_base")
+
             # 定义子文档切分器 (Small Chunk)
-            # Config kb_chunk_size -> Parent Size
-            
-            parent_chunk_size = kb_chunk_size 
+            # Parent <- kb_chunk_size
+            parent_chunk_size = kb_chunk_size
             child_chunk_size = 200
             child_overlap = 35
             
@@ -137,13 +144,16 @@ async def process_document_pipeline(doc_id: int):
             child_splitter = RecursiveCharacterTextSplitter(
                 chunk_size=child_chunk_size,
                 chunk_overlap=child_overlap,
-                separators=["\n\n", "\n", "。", "！", "？"," ", ""]
+                separators=["\n\n", "\n", "。", "！", "？", " ", ""]
             )
             
             results = []
             for p_doc in parent_docs:
                 parent_id = str(uuid.uuid4())
                 parent_content = p_doc.page_content
+                
+                # 计算 Parent Token 数并存入 Metadata
+                token_count = len(tokenizer.encode(parent_content))
                 
                 # 切分 Child
                 child_chunks = child_splitter.split_documents([p_doc])
@@ -156,6 +166,7 @@ async def process_document_pipeline(doc_id: int):
                     c_doc.metadata["doc_id"] = str(uuid.uuid4()) # Child Unique ID
                     c_doc.metadata["parent_id"] = parent_id      # Link to Parent
                     c_doc.metadata["parent_content"] = parent_content # Store Parent Content
+                    c_doc.metadata["token_count"] = token_count  # Pre-calculated Tokens
                     
                     # 补充业务元数据
                     c_doc.metadata["source"] = doc_filename

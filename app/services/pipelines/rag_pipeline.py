@@ -6,6 +6,7 @@ RAG 管道模块 (pipeline.py)
 import logging
 from typing import AsyncGenerator, List, Optional, Union, Dict, Any
 
+import tiktoken
 from langchain_core.documents import Document
 from langchain_core.runnables import RunnablePassthrough, RunnableLambda
 from langchain_core.messages import BaseMessage
@@ -18,6 +19,7 @@ from app.services.factories.retrieval_factory import RetrievalFactory
 from app.services.factories.llm_factory import setup_llm
 from app.services.rerank.rerank_service import RerankService
 from app.services.generation.rewrite_service import QueryRewriteService
+
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -41,6 +43,12 @@ class RAGPipeline:
         self.langfuse_handler = CallbackHandler()
         self.generation_chain = self.qa_service.chain
         self.rewrite_service = rewrite_service
+        
+        # 初始化 Tokenizer
+        try:
+            self.tokenizer = tiktoken.get_encoding("cl100k_base")
+        except Exception:
+            self.tokenizer = tiktoken.get_encoding("cl100k_base")
         
         self.rag_chain = (
             {
@@ -72,7 +80,7 @@ class RAGPipeline:
             strategy=strategy,
             top_k=recall_top_k, 
             knowledge_id=knowledge_id,
-            rerank_service=rerank_service, # 传递给 RetrievalFactory (如果需要)
+            rerank_service=rerank_service, 
             **kwargs
         )
 
@@ -87,38 +95,43 @@ class RAGPipeline:
 
     def _format_docs(self, docs: List[Document]) -> str:
         """
-        [Smart Truncation] 智能截断策略
-        基于 Rerank 分数动态决定是否保留超长文档。
+        [Smart Truncation v2] 智能截断策略 (Token Aware)
+        基于精确的 Token 计数和 Rerank 分数动态截断。
         """
-        MAX_TOTAL_TOKENS = settings.MAX_TOTAL_TOKENS
+    
+        max_total_tokens = settings.MAX_TOTAL_TOKENS    
         HIGH_QUALITY_THRESHOLD = 0.75 # Rerank 分数阈值
         
         current_tokens = 0
         valid_docs = []
         
-        logger.debug(f"Formatting {len(docs)} documents with Smart Truncation...")
+        logger.debug(f"Formatting {len(docs)} documents with Token-Aware Smart Truncation...")
 
         for doc in docs:
-            # 简单估算 token 数 (char / 1.5 approx for Chinese/English mix)
-            # 或者 len(doc.page_content)
-            doc_len = len(doc.page_content) 
+            # 1. 获取或计算 Token 数
+            # 优先使用 Ingestion 阶段预计算的准确值
+            if "token_count" in doc.metadata:
+                doc_tokens = doc.metadata["token_count"]
+            else:
+                doc_tokens = len(self.tokenizer.encode(doc.page_content))
+            
             score = doc.metadata.get("rerank_score", 0)
             
-            # 预判加入该文档后是否超限
-            if current_tokens + doc_len > MAX_TOTAL_TOKENS:
-                # [智能策略] 如果这篇文档相关性极高，尝试保留（即使稍微超限），否则截断退出
-                # 只有在还没填满 80% 的情况下才允许稍微溢出，避免无限膨胀
-                if score > HIGH_QUALITY_THRESHOLD and current_tokens < MAX_TOTAL_TOKENS * 0.8:
-                    logger.info(f"保留高分长文档 (Score: {score:.3f}, Len: {doc_len})，尽管即将超限。")
+            # 2. 预判是否超限
+            if current_tokens + doc_tokens > max_total_tokens:
+                # 只有在 Context 还没填满 90% 且文档质量极高时，才允许最后一次溢出
+                if score > HIGH_QUALITY_THRESHOLD and current_tokens < max_total_tokens * 0.9:
+                    logger.info(f"保留高分文档 (Score: {score:.3f}, Tokens: {doc_tokens})，尽管即将超限 (Current: {current_tokens})。")
                     valid_docs.append(doc.page_content)
                     break # 强行塞入这一篇后停止
                 else:
-                    logger.warning(f"达到 Token 上限 ({current_tokens}) 且文档分数 ({score:.3f}) 未达豁免阈值，截断后续内容。")
+                    logger.warning(f"达到 Token 上限 ({current_tokens}/{max_total_tokens})，截断后续内容。")
                     break
             
             valid_docs.append(doc.page_content)
-            current_tokens += doc_len
+            current_tokens += doc_tokens
             
+        logger.info(f"Context 组装完成: {len(valid_docs)} docs, ~{current_tokens} tokens.")
         return "\n\n".join(valid_docs)
 
     async def _prepare_answer_async(self, inputs: Dict[str, Any], docs: List[Document]):
@@ -153,14 +166,12 @@ class RAGPipeline:
         )
 
         # 1. Recall (检索 50 条 Children -> Collapse to Parents)
-        # Retriever (ESHybridRetriever) 内部现在会做 Collapse
         recall_docs = await self.retrieval_service.afetch(
             search_query, 
             config=callbacks
         )
         
         # 2. Rerank (对 Parents 进行精排)
-        # Retriever 返回的现在是 Parents (大块内容)
         reranked_docs = await self.rerank_service.rerank_documents(
             query=search_query,
             docs=recall_docs,
@@ -210,7 +221,7 @@ class RAGPipeline:
         # Yield 精排后的文档
         yield reranked_docs
         
-        # 3. Generate (Smart Truncation is applied inside _format_docs called below)
+        # 3. Generate (Smart Truncation inside _format_docs)
         context = self._format_docs(reranked_docs)
         inputs = {
             "question": query, 
