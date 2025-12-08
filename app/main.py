@@ -13,7 +13,7 @@ from app.api import api_router
 from app.db.session import create_db_and_tables
 from app.core.config import settings
 from app.core.logging_setup import setup_logging
-from app.services.retrieval.es_client import wait_for_es 
+from app.services.retrieval.es_client import close_es_client, wait_for_es 
 
 setup_logging(str(settings.LOG_FILE_PATH), log_level="INFO")
 logger = logging.getLogger("app.main")
@@ -62,7 +62,8 @@ async def lifespan(app: FastAPI):
         logger.info("Redis 连接池已关闭。")
     if app.state.redis: 
         await app.state.redis.close()
-
+        
+    close_es_client()
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version="0.1.0",

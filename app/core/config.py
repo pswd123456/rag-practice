@@ -69,6 +69,7 @@ class Settings(BaseSettings):
     ES_USER: Optional[str] = None
     ES_PASSWORD: Optional[str] = None
     ES_TIMEOUT: int = 30
+    ES_MAX_CONNECTIONS: int = 50
     EMBEDDING_DIM: int = 1024
 
     #db

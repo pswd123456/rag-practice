@@ -23,6 +23,7 @@ def get_es_client() -> Elasticsearch:
         "request_timeout": settings.ES_TIMEOUT,
         "max_retries": 3,
         "retry_on_timeout": True,
+        "max_connections": settings.ES_MAX_CONNECTIONS
     }
 
     if settings.ES_USER and settings.ES_PASSWORD:
@@ -62,3 +63,14 @@ def wait_for_es():
     version = info['version']['number']
     logger.info(f"✅ Elasticsearch 已连接! Version: {version} | Cluster: {info['cluster_name']}")
     return True
+def close_es_client():
+    """
+    清理 ES 客户端连接资源
+    """
+    # 由于使用了 lru_cache，直接再次调用 get_es_client() 获取的是同一个实例
+    client = get_es_client()
+    try:
+        client.close()
+        logger.info("🛑 Elasticsearch 客户端连接已关闭。")
+    except Exception as e:
+        logger.warning(f"关闭 Elasticsearch 客户端时发生错误: {e}")
