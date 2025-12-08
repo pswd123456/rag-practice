@@ -67,37 +67,6 @@ class DoclingLoader:
             }
         )
 
-    def _save_debug_files(self, doc_content, markdown_text: str):
-        """
-        [Debug Logic] 保存中间解析结果到项目根目录
-        """
-        try:
-            # 1. 构造文件名
-            original_stem = Path(self.file_path).stem
-            # 清理文件名中的特殊字符以免路径报错
-            safe_stem = "".join([c for c in original_stem if c.isalnum() or c in (' ', '-', '_')]).strip()
-            
-            json_filename = f"debug_docling_{safe_stem}.json"
-            md_filename = f"debug_docling_{safe_stem}.md"
-            
-            json_path = PROJECT_ROOT / json_filename
-            md_path = PROJECT_ROOT / md_filename
-
-            logger.info(f"🐛 [Debug] 正在保存 Docling 中间文件到根目录...")
-
-            # 2. 保存 Markdown 内容
-            with open(md_path, "w", encoding="utf-8") as f:
-                f.write(markdown_text)
-            
-            # 3. 尝试保存 JSON
-            if hasattr(doc_content, "export_to_dict"):
-                doc_dict = doc_content.export_to_dict()
-                with open(json_path, "w", encoding="utf-8") as f:
-                    json.dump(doc_dict, f, ensure_ascii=False, indent=2)
-            
-        except Exception as e:
-            logger.error(f"🐛 [Debug] 保存调试文件失败: {e}")
-
     def load(self) -> List[Document]:
         """
         加载文档并转换为单一的 Markdown LangChain Document。
@@ -124,13 +93,6 @@ class DoclingLoader:
             conversion_result = self._converter.convert(self.file_path)
             doc_content = conversion_result.document
             
-            # Debug: 始终保存 Markdown 以便人工检查
-            # try:
-            #     markdown_text = doc_content.export_to_markdown()
-            #     self._save_debug_files(doc_content, markdown_text)
-            # except Exception:
-            #     pass
-
             final_docs = []
 
             # 2. 分支处理
@@ -138,12 +100,11 @@ class DoclingLoader:
                 # === Hybrid Chunking 逻辑 ===
                 logger.info(f"初始化 HybridChunker (Tokenizer: {settings.CHUNK_TOKENIZER_ID}, MaxTokens: {max_tokens})")
                 
-                # 初始化 Tokenizer (Lazily loaded usually, but here we init explicitly)
-                # 注意：AutoTokenizer 需要联网下载模型配置，Worker 环境需确保网络或已缓存
+                # 初始化 Tokenizer
                 hf_tokenizer = AutoTokenizer.from_pretrained(settings.CHUNK_TOKENIZER_ID)
                 tokenizer = HuggingFaceTokenizer(
                     tokenizer=hf_tokenizer, 
-                    max_tokens=max_tokens # <--- 这里必须传，通常是 512
+                    max_tokens=max_tokens
                 )
                 
                 chunker = HybridChunker(
@@ -158,52 +119,43 @@ class DoclingLoader:
                     # 获取增强后的上下文文本 (包含标题层级等)
                     enriched_text = chunker.contextualize(chunk=chunk)
                     
+                    # --- [关键逻辑] 解析页码 (保留) ---
                     page_numbers = set()
-                
-                    # 获取 doc_items，如果属性不存在则返回空列表
-                    # getattr(obj, name, default) 比 hasattr 更稳健
+                    
+                    # 获取 doc_items
                     doc_items = getattr(chunk.meta, "doc_items", []) or []
 
                     for item in doc_items:
-                        # 1. 获取 prov 列表 (兼容对象属性访问 和 字典访问)
                         provs = []
                         if hasattr(item, "prov"):
                             provs = item.prov
                         elif isinstance(item, dict) and "prov" in item:
                             provs = item["prov"]
                         
-                        # 如果 provs 为空或 None，跳过
                         if not provs:
                             continue
                         
                         for prov in provs:
                             p_no = None
-                            
-                            # 尝试从 prov 中提取 page_no
-                            # 方式 A: 对象属性访问 (最常见)
                             if hasattr(prov, "page_no"):
                                 p_no = prov.page_no
-                            
-                            # 方式 B: 字典访问 (如果是 dict)
                             elif isinstance(prov, dict) and "page_no" in prov:
                                 p_no = prov["page_no"]
 
-                            # 如果提取到了，加入集合
                             if p_no is not None:
                                 page_numbers.add(p_no)
+                    # ---------------------------------
 
                     # 排序并生成最终列表
                     sorted_pages = sorted(list(page_numbers))
-                    logger.info(f"📄 Chunk {i} 提取到的页码: {sorted_pages}")
-
+                    
                     metadata = {
                         "source": str(self.file_path),
                         "filename": Path(self.file_path).name,
                         "chunk_index": i,
-                        "doc_items": [str(item) for item in chunk.meta.doc_items] if hasattr(chunk.meta, "doc_items") else [],
                         "headings": chunk.meta.headings if hasattr(chunk.meta, "headings") else [],
-                        "page_numbers": sorted_pages,
-                        "page_number": sorted_pages[0] if sorted_pages else None # 获取第一个页码
+                        "page_numbers": sorted_pages, # ✅ 页码依然保留
+                        "page_number": sorted_pages[0] if sorted_pages else None 
                     }
                     
                     final_docs.append(Document(page_content=enriched_text, metadata=metadata))
@@ -212,6 +164,7 @@ class DoclingLoader:
                 
             else:
                 # === 全文 Markdown ===
+                markdown_text = doc_content.export_to_markdown()
                 metadata = {
                     "source": str(self.file_path),
                     "filename": Path(self.file_path).name,
@@ -225,7 +178,7 @@ class DoclingLoader:
             logger.error(f"Docling 解析/切片失败: {e}", exc_info=True)
             raise e
 
-# 适配函数 (Updated)
+# 适配函数
 def load_and_chunk_docling_document(file_path: str, chunk_size: int = 512) -> List[Document]:
     loader = DoclingLoader(file_path)
     return loader.load_and_chunk(chunk_size=chunk_size)
