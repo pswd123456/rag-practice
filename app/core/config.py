@@ -81,6 +81,9 @@ class Settings(BaseSettings):
     CHUNK_SIZE: int = 500
     CHUNK_OVERLAP: int = 50
 
+    #chat config
+    CHAT_WINDOW_SIZE: int = 12
+
     # evaluation
     TESTSET_SIZE: int = 1
     

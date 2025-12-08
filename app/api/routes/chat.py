@@ -17,6 +17,7 @@ from app.domain.schemas.chat import (
 from app.domain.models import User
 from app.services.chat import chat_service
 from app.services.knowledge import knowledge_crud
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -119,7 +120,12 @@ async def chat_completion(
     )
     
     # 3. 获取历史记录 (用于 Context)
-    history_objs = await chat_service.get_session_history(db, session_id, current_user.id)
+    history_objs = await chat_service.get_session_history(
+        db, 
+        session_id, 
+        current_user.id, 
+        limit=settings.CHAT_WINDOW_SIZE
+    )
     
     from langchain_core.messages import HumanMessage, AIMessage
     chat_history = []

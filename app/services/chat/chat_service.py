@@ -154,20 +154,25 @@ async def get_session_history(
     db: AsyncSession,
     session_id: uuid.UUID,
     user_id: int,
-    limit: int = 50
+    limit: int = 20 # 默认值可以稍微大一点
 ) -> Sequence[Message]:
     """
-    获取会话历史消息 (用于构建 LLM Context 或前端展示)
-    返回顺序: 旧 -> 新 (符合 LLM 输入习惯)
+    获取会话最近的历史消息 (滑动窗口)。
+    策略: DESC 排序取 limit -> 内存反转为 ASC
     """
+    # 1. 鉴权 (确保 Session 属于该 User)
     await get_session_by_id(db, session_id, user_id)
     
+    # 2. 倒序查询最近的 limit 条
     statement = (
         select(Message)
         .where(Message.session_id == session_id)
-        .order_by(Message.created_at.asc()) 
+        .order_by(Message.created_at.desc()) # 关键：倒序
+        .limit(limit)                        # 关键：限制数量
     )
     result = await db.exec(statement)
-    messages = result.all()
     
-    return messages
+    # 3. 结果是 [新 -> 旧]，需要反转为 [旧 -> 新]
+    # 例如：查询得到 [Msg10, Msg9, Msg8]，翻转为 [Msg8, Msg9, Msg10]
+    messages = result.all()
+    return list(reversed(messages))
