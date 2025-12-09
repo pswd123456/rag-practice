@@ -13,9 +13,6 @@ import tiktoken
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document as LangChainDocument
 
-# 🟢 引入 ES 异常以便捕获
-from elasticsearch.helpers import BulkIndexError 
-
 from app.db.session import async_session_maker
 from sqlalchemy.orm import selectinload
 
@@ -122,10 +119,12 @@ async def process_document_pipeline(doc_id: int):
                 tokenizer = tiktoken.get_encoding("cl100k_base")
 
             # 定义子文档切分器 (Small Chunk)
-            # Parent <- kb_chunk_size
+            # Parent <- kb_chunk_size (Configurable via KB Settings)
             parent_chunk_size = kb_chunk_size
-            child_chunk_size = 200
-            child_overlap = 35
+            
+            # Child <- Configurable via Settings (Small-to-Big Strategy)
+            child_chunk_size = settings.CHILD_CHUNK_SIZE
+            child_overlap = settings.CHILD_CHUNK_OVERLAP
             
             parent_docs = []
 
@@ -172,21 +171,11 @@ async def process_document_pipeline(doc_id: int):
                     c_doc.metadata["token_count"] = token_count  # Pre-calculated Tokens
                     
                     # 补充业务元数据
-                    c_doc.metadata["source"] = str(doc_filename) # 🟢 强制 str
-                    c_doc.metadata["knowledge_id"] = str(doc_kb_id) # 🟢 强制 str (对应 keyword mapping)
-                    
-                    # 兼容 pyPDF / Docling 页码
+                    c_doc.metadata["source"] = doc_filename
+                    c_doc.metadata["knowledge_id"] = doc_kb_id
+                    # 兼容 pyPDF
                     if "page" in c_doc.metadata and "page_number" not in c_doc.metadata:
                         c_doc.metadata["page_number"] = c_doc.metadata["page"]
-                    
-                    # 🟢 清理/规范化 page_number 类型 (ES 可能会纠结于 int vs None vs string)
-                    if "page_number" in c_doc.metadata:
-                        val = c_doc.metadata["page_number"]
-                        if val is not None:
-                            try:
-                                c_doc.metadata["page_number"] = int(val)
-                            except:
-                                c_doc.metadata["page_number"] = 0
 
                     results.append(c_doc)
             
@@ -221,36 +210,6 @@ async def process_document_pipeline(doc_id: int):
                 db.add(doc)
                 await db.commit()
                 logger.info(f"文档 {doc_id} 状态已更新为 COMPLETED")
-
-    except BulkIndexError as e:
-        # 🟢 [Error Handling] 专门处理 ES Bulk 写入错误
-        logger.error(f"ES Bulk 写入失败: {e}")
-        
-        err_msg = str(e)
-        # 提取第一个错误原因进行简要分析
-        if e.errors:
-            first_err = e.errors[0]
-            # 常见格式: {'index': {'_index': '...', 'status': 400, 'error': {'type': 'mapper_parsing_exception', ...}}}
-            if isinstance(first_err, dict):
-                # 尝试提取 deep error info
-                error_detail = first_err.get("index", {}).get("error", {})
-                if isinstance(error_detail, dict):
-                    err_type = error_detail.get("type", "")
-                    err_reason = error_detail.get("reason", "")
-                    if "mapper_parsing_exception" in err_type:
-                        err_msg = f"索引字段类型冲突 (Mapping Error)。请尝试删除旧索引 '{collection_name}' 后重试。Details: {err_reason}"
-                    else:
-                        err_msg = f"ES 写入错误: {err_reason}"
-        
-        logger.error(f"文档 {doc_id} 处理中断。Root Cause: {err_msg}")
-        
-        async with async_session_maker() as db:
-            doc = await db.get(Document, doc_id)
-            if doc:
-                doc.status = DocStatus.FAILED
-                doc.error_message = err_msg[:1000] # 防止过长
-                db.add(doc)
-                await db.commit()
 
     except Exception as e:
         logger.error(f"文档 {doc_id} 处理失败: {e}", exc_info=True)

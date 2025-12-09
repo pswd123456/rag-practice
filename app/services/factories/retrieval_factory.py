@@ -15,7 +15,8 @@ class RetrievalFactory:
         strategy: str = "hybrid", 
         top_k: int = 50,          
         knowledge_id: Optional[int] = None,
-        knowledge_ids: Optional[List[int]] = None, # [New]
+        knowledge_ids: Optional[List[int]] = None, 
+        do_collapse: bool = True, # [New] 默认 True 保持向后兼容
         **kwargs: Any
     ) -> BaseRetriever:
         
@@ -32,13 +33,19 @@ class RetrievalFactory:
         if es_filter:
             search_kwargs["filter"] = es_filter
             
-        logger.debug(f"构建 Retriever | 策略: {strategy} | KBs: {target_ids} | TopK: {top_k}")
+        logger.debug(f"构建 Retriever | 策略: {strategy} | KBs: {target_ids} | TopK: {top_k} | Collapse: {do_collapse}")
 
         if strategy in ["dense", "dense_only"]:
              return RetrievalFactory._create_dense_retriever(store_manager, search_kwargs)
             
         elif strategy in ["default", "hybrid", "rerank"]: 
-             return RetrievalFactory._create_hybrid_retriever(store_manager, search_kwargs, knowledge_ids=target_ids, **kwargs)
+             return RetrievalFactory._create_hybrid_retriever(
+                 store_manager, 
+                 search_kwargs, 
+                 knowledge_ids=target_ids, 
+                 do_collapse=do_collapse, 
+                 **kwargs
+             )
         
         else:
              logger.warning(f"未知策略 '{strategy}'，回退到 Dense 检索。")
@@ -68,15 +75,17 @@ class RetrievalFactory:
         manager: VectorStoreManager, 
         search_kwargs: dict, 
         knowledge_ids: List[int] = None,
+        do_collapse: bool = True,
         **kwargs
     ) -> BaseRetriever:
         
         top_k = search_kwargs.get("k", 4)
         
-        logger.info(f"初始化 Hybrid Retriever (Manual RRF), KBs: {knowledge_ids}")
+        logger.info(f"初始化 Hybrid Retriever (Manual RRF), KBs: {knowledge_ids}, Collapse: {do_collapse}")
 
         return ESHybridRetriever(
             store_manager=manager,
             top_k=top_k,
-            knowledge_ids=knowledge_ids
+            knowledge_ids=knowledge_ids,
+            do_collapse=do_collapse
         )

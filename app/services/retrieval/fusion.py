@@ -1,7 +1,8 @@
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from langchain_core.documents import Document
 from langfuse import observe
+
 # 初始化 Logger
 logger = logging.getLogger(__name__)
 
@@ -71,3 +72,54 @@ def rrf_fusion(
     )
 
     return final_docs
+
+@observe(name="collapse_documents", as_type="span")
+def collapse_documents(docs: List[Document], top_k: Optional[int] = None) -> List[Document]:
+    """
+    执行父子文档折叠 (Collapse)
+    将多个属于同一父文档的 Child Chunks 聚合，返回父文档内容。
+    
+    :param docs: 输入的文档列表 (通常是 Child Chunks)
+    :param top_k: 可选，如果设置，当收集到足够数量的 Parent Docs 后提前停止
+    """
+    seen_parent_ids = set()
+    unique_parent_docs = []
+    
+    logger.debug(f"Collapsing {len(docs)} child docs...")
+
+    for doc in docs:
+        parent_id = doc.metadata.get("parent_id")
+        parent_content = doc.metadata.get("parent_content")
+        
+        # 如果没有 parent info，直接使用 child 本身
+        if not parent_id:
+            # 尝试使用 doc_id 或内容哈希作为唯一标识，防止重复
+            doc_id = doc.metadata.get("doc_id") or str(hash(doc.page_content))
+            if doc_id not in seen_parent_ids:
+                seen_parent_ids.add(doc_id)
+                unique_parent_docs.append(doc)
+            continue
+        
+        # 核心折叠逻辑
+        if parent_id in seen_parent_ids:
+            continue 
+        
+        seen_parent_ids.add(parent_id)
+        
+        # 构造新的 Document，内容替换为 Parent Content
+        # 注意：这里会丢失 Child 特有的 score (如果是 Rerank 后的 score，通常取第一个/最高分的即可)
+        new_doc = Document(
+            page_content=parent_content,
+            metadata=doc.metadata.copy()
+        )
+        # 清理 metadata，避免混淆
+        new_doc.metadata.pop("parent_content", None)
+        
+        unique_parent_docs.append(new_doc)
+        
+        # 如果指定了 top_k 且已满足，提前退出
+        if top_k and len(unique_parent_docs) >= top_k: 
+            break
+    
+    logger.info(f"Collapse completed: {len(docs)} children -> {len(unique_parent_docs)} parents")
+    return unique_parent_docs

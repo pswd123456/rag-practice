@@ -20,6 +20,8 @@ from app.services.factories.retrieval_factory import RetrievalFactory
 from app.services.factories.llm_factory import setup_llm
 from app.services.rerank.rerank_service import RerankService
 from app.services.generation.rewrite_service import QueryRewriteService
+# 导入 collapse_documents
+from app.services.retrieval.fusion import collapse_documents
 
 from app.core.config import settings
 
@@ -51,6 +53,8 @@ class RAGPipeline:
         except Exception:
             self.tokenizer = tiktoken.get_encoding("cl100k_base")
         
+        # [Note] rag_chain 仅作为概念展示或简单同步调用入口，
+        # 实际业务主要走 async_query 和 astream_with_sources
         self.rag_chain = (
             {
                 "context": RunnableLambda(self.retrieval_service.afetch) | self._format_docs,
@@ -76,12 +80,15 @@ class RAGPipeline:
         工厂方法：组装 RAGPipeline
         """
         
+        # [Modify] 强制关闭 Retriever 内部的折叠逻辑，
+        # 将折叠操作延迟到 Rerank 之后，在 Pipeline 层面处理。
         retriever = RetrievalFactory.create_retriever(
             store_manager=store_manager,
             strategy=strategy,
             top_k=recall_top_k, 
             knowledge_id=knowledge_id,
-            rerank_service=rerank_service, 
+            rerank_service=rerank_service,
+            do_collapse=False, # 🟢 Disable internal collapse
             **kwargs
         )
 
@@ -155,7 +162,7 @@ class RAGPipeline:
                           chat_history: List[BaseMessage] = None,
                           **kwargs):
         """
-        异步入口 (Standard: Recall -> Rerank -> Generate)
+        异步入口 (New Flow: Recall(Child) -> Rerank(Child) -> Collapse(Parent) -> TopK -> Generate)
         """
         callbacks = {"callbacks": [self.langfuse_handler]}
 
@@ -163,28 +170,36 @@ class RAGPipeline:
             question, chat_history or [], config=callbacks
         )
 
-        # 1. Recall
-        recall_docs = await self.retrieval_service.afetch(
+        # 1. Recall (返回 Child Chunks)
+        recall_child_docs = await self.retrieval_service.afetch(
             search_query, 
             config=callbacks
         )
         
-        # 2. Rerank
-        reranked_docs = await self.rerank_service.rerank_documents(
+        # 2. Rerank (Child Chunks)
+        # Rerank 所有的候选 Child，确保高相关性的切片能浮上来
+        reranked_child_docs = await self.rerank_service.rerank_documents(
             query=search_query,
-            docs=recall_docs,
-            top_n=top_k,
+            docs=recall_child_docs,
+            top_n=len(recall_child_docs), # Rerank all retrieved docs
             threshold=threshold 
         )
         
-        # 3. Generate
+        # 3. Collapse (Child -> Parent)
+        # 将排序后的 Child 映射回 Parent，并去重
+        parent_docs = collapse_documents(reranked_child_docs)
+        
+        # 4. Top K Slice
+        final_docs = parent_docs[:top_k]
+        
+        # 5. Generate
         inputs = {
             "question": question, 
             "chat_history": chat_history, 
             **kwargs
         }
 
-        return await self._prepare_answer_async(inputs, reranked_docs)
+        return await self._prepare_answer_async(inputs, final_docs)
 
     async def astream_with_sources(self, 
                                    query: str, 
@@ -193,7 +208,7 @@ class RAGPipeline:
                                    chat_history: List[BaseMessage] = None,
                                    **kwargs) -> AsyncGenerator[Union[List[Document], str], None]:
         """
-        流式生成 (支持 Rerank)
+        流式生成 (支持 Small-to-Big Rerank)
         """
 
         callbacks = {"callbacks": [self.langfuse_handler]}
@@ -202,24 +217,31 @@ class RAGPipeline:
             query, chat_history or [], config=callbacks
         )
 
-        # 1. Recall
-        recall_docs = await self.retrieval_service.afetch(
+        # 1. Recall (Child)
+        recall_child_docs = await self.retrieval_service.afetch(
             search_query, 
             config=callbacks
         )
 
-        # 2. Rerank
-        reranked_docs = await self.rerank_service.rerank_documents(
+        # 2. Rerank (Child)
+        reranked_child_docs = await self.rerank_service.rerank_documents(
             query=search_query, 
-            docs=recall_docs,
-            top_n=top_k,
+            docs=recall_child_docs,
+            top_n=len(recall_child_docs), # Rerank all
             threshold=threshold
         )
         
-        yield reranked_docs
+        # 3. Collapse (Child -> Parent)
+        parent_docs = collapse_documents(reranked_child_docs)
         
-        # 3. Generate
-        context = self._format_docs(reranked_docs)
+        # 4. Top K Slice
+        final_docs = parent_docs[:top_k]
+        
+        # 发送引用源
+        yield final_docs
+        
+        # 5. Generate
+        context = self._format_docs(final_docs)
         inputs = {
             "question": query, 
             "context": context, 

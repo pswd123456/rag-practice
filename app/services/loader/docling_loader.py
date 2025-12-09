@@ -14,7 +14,7 @@ from langchain_core.documents import Document
 # Docling
 from docling.document_converter import DocumentConverter, PdfFormatOption
 from docling.datamodel.base_models import InputFormat
-from docling.datamodel.pipeline_options import PdfPipelineOptions
+from docling.datamodel.pipeline_options import PdfPipelineOptions, PictureDescriptionVlmOptions
 from docling.datamodel.accelerator_options import AcceleratorOptions, AcceleratorDevice
 
 # Docling Chunking
@@ -41,10 +41,25 @@ class DoclingLoader:
         """
         初始化 Converter，配置 GPU 加速（如果可用）
         """
+
+        local_models_path = settings.DOCLING_MODELS_PATH
+
         # 配置 Pipeline 选项
         pipeline_options = PdfPipelineOptions()
         pipeline_options.do_ocr = True  # 开启 OCR 以处理扫描件
         pipeline_options.do_table_structure = True # 开启表格结构提取
+        pipeline_options.do_formula_enrichment = True
+        pipeline_options.do_picture_description = True 
+        # 图片描述用的默认的256M的SmolVLM, 一言难尽, 由于机器性能限制只能用这个, 后续可以自己换一下
+        pipeline_options.picture_description_options = PictureDescriptionVlmOptions(
+            repo_id="HuggingFaceTB/SmolVLM-256M-Instruct",
+            
+            #"Describe this image in a few sentences."
+            prompt="Briefly describe the main subject of this image. If it is a chart, explain what it shows."
+        )
+
+        pipeline_options.images_scale = 2.0
+        pipeline_options.artifacts_path = local_models_path
 
         # GPU 加速配置
         if torch.cuda.is_available():

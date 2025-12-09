@@ -9,6 +9,7 @@ from fastapi import HTTPException
 
 from app.domain.models import ChatSession, Message
 from app.domain.schemas.chat import ChatSessionUpdate
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +27,7 @@ async def create_session(
         knowledge_ids=[knowledge_id], # 默认包含主 KB
         title=title,
         icon=icon,
-        top_k=3 # 默认值
+        top_k=settings.TOP_K
     )
     db.add(session)
     await db.commit()

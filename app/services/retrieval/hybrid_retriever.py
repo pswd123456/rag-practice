@@ -5,7 +5,7 @@ from langchain_core.documents import Document
 from langchain_core.callbacks import CallbackManagerForRetrieverRun
 
 from app.services.retrieval.vector_store_manager import VectorStoreManager
-from app.services.retrieval.fusion import rrf_fusion
+from app.services.retrieval.fusion import rrf_fusion, collapse_documents
 
 from langfuse import observe 
 
@@ -20,7 +20,8 @@ class ESHybridRetriever(BaseRetriever):
     store_manager: VectorStoreManager
     top_k: int = 4
     knowledge_ids: Optional[List[int]] = None 
-    rerank_service: Optional[Any] = None 
+    rerank_service: Optional[Any] = None
+    do_collapse: bool = True # [New] 控制是否执行父文档折叠
 
     @observe(name="es_search_execution", as_type="span")
     def _execute_es_search(self, client, index_name: str, body: Dict[str, Any], search_type: str) -> Dict[str, Any]:
@@ -30,56 +31,11 @@ class ESHybridRetriever(BaseRetriever):
         response = client.search(index=index_name, body=body)
         return response.body if hasattr(response, 'body') else response
 
-    @observe(name="parent_child_collapse", as_type="span")
-    def _collapse_documents(self, fused_child_docs: List[Document]) -> List[Document]:
-        """
-        [Trace Node] 执行父子文档折叠 (Collapse)
-        将多个属于同一父文档的 Child Chunks 聚合，返回父文档内容。
-        """
-        seen_parent_ids = set()
-        unique_parent_docs = []
-        
-        logger.debug(f"Collapsing {len(fused_child_docs)} child docs...")
-
-        for doc in fused_child_docs:
-            parent_id = doc.metadata.get("parent_id")
-            parent_content = doc.metadata.get("parent_content")
-            
-            # 如果没有 parent info，直接使用 child 本身
-            if not parent_id:
-                doc_id = doc.metadata.get("doc_id") or str(hash(doc.page_content))
-                if doc_id not in seen_parent_ids:
-                    seen_parent_ids.add(doc_id)
-                    unique_parent_docs.append(doc)
-                continue
-            
-            # 核心折叠逻辑
-            if parent_id in seen_parent_ids:
-                continue 
-            
-            seen_parent_ids.add(parent_id)
-            
-            # 构造新的 Document，内容替换为 Parent Content
-            new_doc = Document(
-                page_content=parent_content,
-                metadata=doc.metadata.copy()
-            )
-            # 清理 metadata
-            new_doc.metadata.pop("parent_content", None)
-            
-            unique_parent_docs.append(new_doc)
-            
-            if len(unique_parent_docs) >= self.top_k * 2: 
-                break
-        
-        logger.info(f"Collapse completed: {len(fused_child_docs)} children -> {len(unique_parent_docs)} parents")
-        return unique_parent_docs
-
     def _get_relevant_documents(
         self, query: str, *, run_manager: CallbackManagerForRetrieverRun
     ) -> List[Document]:
         
-        logger.info(f"Hybrid Retrieval started. Query: '{query[:50]}...'")
+        logger.info(f"Hybrid Retrieval started. Query: '{query[:50]}...' (Collapse: {self.do_collapse})")
 
         try:
             client = self.store_manager.client
@@ -149,32 +105,38 @@ class ESHybridRetriever(BaseRetriever):
             fused_child_docs = rrf_fusion([vec_docs, kw_docs], k=60)
             
             # -------------------------------------------------------
-            # D. [Collapse] 聚合去重 (Traced)
+            # D. [Collapse] 聚合去重 (Traced) - Conditional
             # -------------------------------------------------------
-            result = self._collapse_documents(fused_child_docs)
-            
-            logger.info(f"Hybrid Retrieval (w/ Collapse) completed. Merged to {len(result)} parent docs.")
-            return result
+            if self.do_collapse:
+                # 仅在需要时折叠 (传统模式)
+                # 使用 top_k * 2 作为安全边界
+                result = collapse_documents(fused_child_docs, top_k=self.top_k * 2)
+                logger.info(f"Hybrid Retrieval (w/ Collapse) completed. Merged to {len(result)} parent docs.")
+                return result
+            else:
+                # 不折叠，直接返回 Child Chunks (Small-to-Big 模式)
+                logger.info(f"Hybrid Retrieval (No Collapse) completed. Returning {len(fused_child_docs)} child docs.")
+                return fused_child_docs
 
         except Exception as e:
             logger.error(f"Hybrid Retrieval Failed: {e}", exc_info=True)
             raise e
 
     def _parse_es_response(self, res: dict) -> List[Document]:
-        docs = []
-        hits = res.get("hits", {}).get("hits", [])
-        
-        for hit in hits:
-            source = hit["_source"]
-            metadata = source.get("metadata", {})
+            docs = []
+            hits = res.get("hits", {}).get("hits", [])
             
-            if "id" not in metadata:
-                 metadata["id"] = hit["_id"]
-            
-            metadata["_es_score"] = hit.get("_score")
-            
-            docs.append(Document(
-                page_content=source.get("text", ""), 
-                metadata=metadata
-            ))
-        return docs
+            for hit in hits:
+                source = hit["_source"]
+                metadata = source.get("metadata", {})
+                
+                if "id" not in metadata:
+                    metadata["id"] = hit["_id"]
+                
+                metadata["_es_score"] = hit.get("_score")
+                
+                docs.append(Document(
+                    page_content=source.get("text", ""), 
+                    metadata=metadata
+                ))
+            return docs

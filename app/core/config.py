@@ -78,8 +78,12 @@ class Settings(BaseSettings):
     # retrieval
     RECALL_TOP_K: int = 50
     TOP_K: int = 5
-    CHUNK_SIZE: int = 500
+    CHUNK_SIZE: int = 500 # Parent Chunk Size Default
     CHUNK_OVERLAP: int = 50
+    
+    CHILD_CHUNK_SIZE: int = 200
+    CHILD_CHUNK_OVERLAP: int = 35
+    
     MAX_TOTAL_TOKENS: int = 5000
 
     #chat config
