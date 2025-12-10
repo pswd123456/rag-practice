@@ -134,7 +134,7 @@ async def remove_member(
     if not target_link:
         raise HTTPException(status_code=404, detail="Member not found")
         
-    # [安全性] 防止移除自己导致知识库无 Owner (或者前端做限制，后端兜底)
+    # 防止移除自己导致知识库无 Owner (或者前端做限制，后端兜底)
     # 简单策略：如果是 OWNER 移除 OWNER，需检查是否还有其他 OWNER
     if target_link.role == UserKnowledgeRole.OWNER:
         # 统计剩余 OWNER 数量
@@ -186,7 +186,6 @@ async def create_knowledge(
 ) -> Knowledge:
     """
     创建一个新的知识库并绑定到指定用户 (作为 OWNER)。
-    [Refactor]: 适配 M:N 模型，写入 UserKnowledgeLink。
     """
     logger.info(f"Creating new knowledge base for User {user_id}: {knowledge_to_create.name}")
     
@@ -218,7 +217,6 @@ async def get_knowledge_by_id(
 ) -> KnowledgeRead: # 修改返回类型提示为 KnowledgeRead
     """
     获取指定 ID 的知识库，并校验用户是否有权访问。
-    [Fix]: 显式查询 Role 并返回 KnowledgeRead 对象，防止 API 响应默认 Role 为 VIEWER。
     """
     # 联表查询: 获取 Knowledge 和 对应的 Role
     statement = (
@@ -281,7 +279,7 @@ async def update_knowledge(
 ) -> Knowledge:
     """
     更新知识库信息。
-    [Refactor]: 需校验是否有编辑权限 (EDITOR 或 OWNER)。
+    需校验是否有编辑权限 (EDITOR 或 OWNER)。
     """
     # 1. 检查权限 (Join Link 表并检查 Role)
     stmt = (
@@ -319,7 +317,7 @@ async def delete_knowledge_pipeline(
 ):
     """
     级联删除知识库。
-    [Refactor]: 严格限制只有 OWNER 可以删除知识库。
+    只有 OWNER 可以删除知识库。
     """
     logger.info(f"User {user_id} 请求级联删除知识库 {knowledge_id}...")
     
@@ -384,7 +382,7 @@ async def delete_knowledge_pipeline(
     except Exception as e:
         logger.error(f"删除 ES 索引失败 (Resource Leak Warning): {e}")
 
-    # 🟢 [Fix] 6. 删除关联的 ChatSessions (防止 IntegrityError)
+    # 6. 删除关联的 ChatSessions (防止 IntegrityError)
     # 由于 ChatSession 的 knowledge_id 是非空的，必须先删除会话
     try:
         session_stmt = select(ChatSession).where(ChatSession.knowledge_id == knowledge_id)

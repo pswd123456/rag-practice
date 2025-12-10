@@ -114,12 +114,12 @@ async def chat_completion(
     """
     session = await chat_service.get_session_by_id(db, session_id, current_user.id)
     
-    # 2. 持久化用户消息
+    # 持久化用户消息
     await chat_service.save_message(
         db, session_id, "user", request.query
     )
     
-    # 3. 获取历史记录 (用于 Context)
+    # 获取历史记录 (用于 Context)
     history_objs = await chat_service.get_session_history(
         db, 
         session_id, 
@@ -137,7 +137,7 @@ async def chat_completion(
         elif msg.role == "assistant":
             chat_history.append(AIMessage(content=msg.content))
     
-    # 4. 初始化 Pipeline
+    # 初始化 Pipeline
     target_kb_ids = session.knowledge_ids if session.knowledge_ids else [session.knowledge_id]
     
     rag_chain = await pipeline_factory(
@@ -146,8 +146,7 @@ async def chat_completion(
         rerank_model_name=request.rerank_model_name,
         prompt_name=request.prompt_name
     )
-    
-    # 确定 Top K: 请求参数优先，其次是会话设置，最后默认 3
+
     final_top_k = request.top_k if request.top_k is not None else session.top_k
 
     # ================= Stream Mode =================

@@ -17,7 +17,6 @@ class Experiment(SQLModel, table=True):
     # 运行时参数
     runtime_params: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     
-    # === 🛑 核心补全：确保这几个分数字段都在！ ===
     faithfulness: float = Field(default=0.0)
     answer_relevancy: float = Field(default=0.0)
     answer_accuracy: float = Field(default=0.0)

@@ -47,7 +47,7 @@ async def update_session(
         session.title = update_data.title
     if update_data.icon is not None:
         session.icon = update_data.icon
-    if update_data.top_k is not None: # [New]
+    if update_data.top_k is not None: 
         session.top_k = update_data.top_k
         
     if update_data.knowledge_ids is not None:

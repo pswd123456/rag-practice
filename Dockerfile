@@ -23,25 +23,17 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # -----------------------------------------------------------------
-# 2. 依赖层优化 (引入 uv)
+# 2. 依赖层
 # -----------------------------------------------------------------
-# [修改点]：不再从 ghcr.io 拉取镜像，而是直接用 pip 安装 uv
-# 使用 -i 指定阿里源，确保 100% 下载成功
+
 RUN pip install uv -i https://mirrors.aliyun.com/pypi/simple/
 
-# [修改] 切换为 CUDA 12.1 的 Index URL (适配 RTX 2060)
-# 注意：uv pip install 的语法略有不同，需要确保 uv 在 PATH 中 (pip安装后默认在 /usr/local/bin，已在 PATH 中)
-# 这一步下载 pytorch 很大，建议保留原来的逻辑，或者让 uv 接管
-# 注意：uv 的 --index-url 只能在 uv pip install 时指定，或者通过环境变量
-# 这里我们用 uv 接管 pytorch 安装
 RUN uv pip install --system torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 
 COPY requirements.txt .
 
-# 设置 uv 的默认镜像源环境变量
 ENV UV_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
 
-# 使用 uv 安装剩余依赖
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --system -r requirements.txt
 
@@ -49,6 +41,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # -----------------------------------------------------------------
 # 3. 源码层
 # -----------------------------------------------------------------
+    
 COPY . .
 ENV PYTHONPATH=/app
 

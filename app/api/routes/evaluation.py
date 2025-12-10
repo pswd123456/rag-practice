@@ -1,7 +1,7 @@
 # app/api/routes/evaluation.py
 
 from typing import List, Dict, Any, Optional
-from fastapi import APIRouter, Depends, HTTPException, status # 🟢 Import status
+from fastapi import APIRouter, Depends, HTTPException, status 
 from sqlmodel import select, desc
 from sqlmodel.ext.asyncio.session import AsyncSession
 from arq import ArqRedis 
@@ -9,7 +9,7 @@ from arq import ArqRedis
 from app.api import deps
 from app.core.config import settings
 from app.domain.models import (
-    Testset, Experiment, Knowledge, User # 🟢 Import User
+    Testset, Experiment, Knowledge, User
 )
 from pydantic import BaseModel
 

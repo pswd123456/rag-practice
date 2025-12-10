@@ -38,7 +38,7 @@ def setup_llm(model_name: Optional[str] = None, **kwargs: Any) -> ChatOpenAI:
             logger.warning("ZENMUX_API_KEY 未设置")
             raise ValueError("LLM apikey is not set (ZenMux)")
 
-    # 分支 B: DeepSeek [新增]
+    # 分支 B: DeepSeek 
     elif "deepseek" in target_model.lower():
         logger.debug("识别为 DeepSeek 模型，使用 DeepSeek 配置。")
         api_key = settings.DEEPSEEK_API_KEY or ""

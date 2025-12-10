@@ -23,7 +23,7 @@ class RerankService:
         self.model_name = model_name
         # 设置合理的超时时间，Rerank 计算量大，建议 60s 以上
         self.timeout = httpx.Timeout(60.0, connect=5.0)
-        # [Fix] 设置客户端分批大小，建议小于服务端限制 (64)，例如 32
+        # 设置客户端分批大小，建议小于服务端限制 (64)，例如 32
         self.batch_size = 32
 
     async def _process_batch(self, query: str, batch_texts: List[str], start_index: int) -> List[Dict[str, Any]]:

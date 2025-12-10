@@ -28,7 +28,7 @@ class ChatSession(SQLModel, table=True):
     title: str = Field(default="New Chat", max_length=255)
     icon: str = Field(default="message-square", description="UI Icon name") 
     
-    # [New] 检索参数配置
+    # 检索参数配置
     top_k: int = Field(default=3, description="单次检索召回的切片数量")
 
     is_deleted: bool = Field(default=False) # 软删除

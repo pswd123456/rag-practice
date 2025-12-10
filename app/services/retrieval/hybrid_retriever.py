@@ -21,7 +21,7 @@ class ESHybridRetriever(BaseRetriever):
     top_k: int = 4
     knowledge_ids: Optional[List[int]] = None 
     rerank_service: Optional[Any] = None
-    do_collapse: bool = True # [New] 控制是否执行父文档折叠
+    do_collapse: bool = True
 
     @observe(name="es_search_execution", as_type="span")
     def _execute_es_search(self, client, index_name: str, body: Dict[str, Any], search_type: str) -> Dict[str, Any]:

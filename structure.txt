@@ -7,84 +7,129 @@
 │   │   ├── __init__.py
 │   │   ├── deps.py
 │   │   └── routes
-│   │       ├── __init__.py
-│   │       ├── chat.py
-│   │       ├── evaluation.py
-│   │       └── knowledge.py
 │   ├── core
 │   │   ├── __init__.py
 │   │   ├── config.py
-│   │   └── logging_setup.py
+│   │   ├── logging_setup.py
+│   │   └── security.py
 │   ├── db
 │   │   ├── __init__.py
 │   │   └── session.py
 │   ├── domain
 │   │   ├── __init__.py
 │   │   ├── models
-│   │   │   ├── __init__.py
-│   │   │   ├── document.py
-│   │   │   ├── experiment.py
-│   │   │   ├── knowledge.py
-│   │   │   └── testset.py
 │   │   └── schemas
-│   │       ├── __init__.py
-│   │       └── chat.py
 │   ├── main.py
 │   ├── services
 │   │   ├── __init__.py
-│   │   ├── document_crud.py
+│   │   ├── chat
 │   │   ├── evaluation
-│   │   │   ├── __init__.py
-│   │   │   ├── config.py
-│   │   │   ├── evaluation_crud.py
-│   │   │   ├── evaluation_service.py
-│   │   │   └── runner.py
 │   │   ├── factories
-│   │   │   ├── __init__.py
-│   │   │   ├── embedding_factory.py
-│   │   │   ├── llm_factory.py
-│   │   │   └── retrieval_factory.py
-│   │   ├── file_storage.py
 │   │   ├── generation
-│   │   │   ├── __init__.py
-│   │   │   └── qa_service.py
 │   │   ├── ingest
-│   │   │   ├── __init__.py
-│   │   │   └── processor.py
-│   │   ├── knowledge_crud.py
+│   │   ├── knowledge
 │   │   ├── loader
-│   │   │   ├── __init__.py
-│   │   │   ├── docling_loader.py
-│   │   │   └── loader.py
+│   │   ├── minio
 │   │   ├── pipelines
-│   │   │   ├── __init__.py
-│   │   │   └── rag_pipeline.py
-│   │   └── retrieval
-│   │       ├── __init__.py
-│   │       ├── es_client.py
-│   │       ├── fusion.py
-│   │       ├── hybrid_retriever.py
-│   │       ├── service.py
-│   │       └── vector_store_manager.py
+│   │   ├── rerank
+│   │   ├── retrieval
+│   │   └── user
 │   └── worker.py
 ├── docker-compose.yml
-├── docs
 ├── es
 │   └── Dockerfile
 ├── frontend
-│   ├── api.py
-│   ├── app.py
-│   ├── tabs
-│   │   ├── __init__.py
-│   │   ├── chat.py
-│   │   ├── documents.py
-│   │   ├── evaluation.py
-│   │   ├── settings.py
-│   │   └── sidebar.py
-│   └── utils.py
+│   └── rag-practice-frontend
+│       ├── Dockerfile
+│       ├── README.md
+│       ├── app
+│       ├── components
+│       ├── components.json
+│       ├── eslint.config.mjs
+│       ├── lib
+│       ├── next-env.d.ts
+│       ├── next.config.ts
+│       ├── node_modules
+│       ├── package-lock.json
+│       ├── package.json
+│       ├── postcss.config.mjs
+│       ├── public
+│       ├── structure.txt
+│       └── tsconfig.json
+├── language_models
+│   ├── HuggingFaceTB--SmolVLM-256M-Instruct
+│   │   ├── README.md
+│   │   ├── added_tokens.json
+│   │   ├── chat_template.json
+│   │   ├── config.json
+│   │   ├── generation_config.json
+│   │   ├── merges.txt
+│   │   ├── model.safetensors
+│   │   ├── onnx
+│   │   ├── preprocessor_config.json
+│   │   ├── processor_config.json
+│   │   ├── special_tokens_map.json
+│   │   ├── tokenizer.json
+│   │   ├── tokenizer_config.json
+│   │   └── vocab.json
+│   ├── RapidOcr
+│   │   ├── paddle
+│   │   └── torch
+│   ├── bge-reranker-v2-m3
+│   │   ├── README.md
+│   │   ├── config.json
+│   │   ├── model.safetensors
+│   │   ├── sentencepiece.bpe.model
+│   │   ├── special_tokens_map.json
+│   │   ├── tokenizer.json
+│   │   └── tokenizer_config.json
+│   ├── config.json
+│   ├── docling-project--CodeFormulaV2
+│   │   ├── README.md
+│   │   ├── added_tokens.json
+│   │   ├── chat_template.json
+│   │   ├── config.json
+│   │   ├── generation_config.json
+│   │   ├── model.safetensors
+│   │   ├── preprocessor_config.json
+│   │   ├── processor_config.json
+│   │   ├── special_tokens_map.json
+│   │   ├── tokenizer.json
+│   │   ├── tokenizer_config.json
+│   │   └── vocab.json
+│   ├── docling-project--docling-models
+│   │   └── model_artifacts
+│   ├── model.safetensors
+│   ├── paraphrase-multilingual-MiniLM-L12-v2
+│   │   ├── config.json
+│   │   ├── sentencepiece.bpe.model
+│   │   ├── special_tokens_map.json
+│   │   ├── tokenizer.json
+│   │   ├── tokenizer_config.json
+│   │   └── unigram.json
+│   └── preprocessor_config.json
+├── logs
+│   └── project.log
 ├── mkdocs.yml
-├── models
-│   └── paraphrase-multilingual-MiniLM-L12-v2
 ├── requirements.txt
 ├── structure.txt
 └── tests
+    ├── api
+    │   ├── test_api_consistency.py
+    │   ├── test_chat_routes_v2.py
+    │   ├── test_member_management.py
+    │   └── test_rate_limit.py
+    ├── conftest.py
+    ├── domain
+    │   └── test_m2m_relationships.py
+    ├── services
+    │   ├── auth
+    │   ├── chat
+    │   ├── evaluation
+    │   ├── ingestion
+    │   └── retrieval
+    └── worker
+        ├── test_worker_recovery.py
+        └── test_worker_routing.py
+
+51 directories, 81 files

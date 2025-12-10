@@ -25,7 +25,6 @@ class KnowledgeBaseBase(SQLModel):
 class Knowledge(KnowledgeBaseBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     
-    # [修改] 移除了 user_id 字段
     # user_id: int = Field(foreign_key="user.id", nullable=False)
 
     status: KnowledgeStatus = Field(default=KnowledgeStatus.NORMAL)
@@ -34,7 +33,6 @@ class Knowledge(KnowledgeBaseBase, table=True):
     documents: List["Document"] = Relationship(back_populates="knowledge_base")
     experiments: List["Experiment"] = Relationship(back_populates="knowledge")
     
-    # [修改] M:N 关系定义
     # link_model 指向中间表
     users: List["User"] = Relationship(back_populates="knowledges", link_model=UserKnowledgeLink)
     

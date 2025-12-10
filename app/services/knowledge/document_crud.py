@@ -15,7 +15,7 @@ async def delete_document_and_vectors(db: AsyncSession, doc_id: int):
     """
     执行原子删除
     """
-    # 1. 查找 Document (不再需要 selectinload(Document.chunks))
+    # 1. 查找 Document
     doc = await db.get(Document, doc_id)
 
     if not doc:

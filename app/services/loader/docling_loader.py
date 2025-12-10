@@ -133,8 +133,7 @@ class DoclingLoader:
                 for i, chunk in enumerate(chunk_iter):
                     # 获取增强后的上下文文本 (包含标题层级等)
                     enriched_text = chunker.contextualize(chunk=chunk)
-                    
-                    # --- [关键逻辑] 解析页码 (保留) ---
+                
                     page_numbers = set()
                     
                     # 获取 doc_items
@@ -179,6 +178,7 @@ class DoclingLoader:
                 
             else:
                 # === 全文 Markdown ===
+                # 这段目前应该是不工作的状态
                 markdown_text = doc_content.export_to_markdown()
                 metadata = {
                     "source": str(self.file_path),

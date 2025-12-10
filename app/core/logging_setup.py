@@ -23,13 +23,13 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(log_record, ensure_ascii=False)
 
 def get_logging_config(log_file_path: str, log_level: str = "INFO") -> Dict[str, Any]:
-    # 确保日志目录存在
+    
     log_path = Path(log_file_path)
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
     config = {
         'version': 1,
-        # 关键：设为 False 以保留 uvicorn 等第三方库的 logger 结构
+        
         'disable_existing_loggers': False, 
 
         # --- Formatters ---
@@ -112,7 +112,6 @@ def get_logging_config(log_file_path: str, log_level: str = "INFO") -> Dict[str,
             'watchfiles': {'level': 'WARNING'},
             'urllib3': {'level': 'WARNING'},
 
-            # [Fix] Elasticsearch 连接刷屏降噪
             'elasticsearch': {'level': 'ERROR'},
             'elastic_transport': {'level': 'ERROR'},
         }

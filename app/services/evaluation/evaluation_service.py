@@ -125,7 +125,6 @@ async def generate_testset_pipeline(db: AsyncSession, testset_id: int, source_do
         # 3. 执行生成 (Ragas Generator)
         def _generation_task():
             generator_llm = setup_llm(generator_model) 
-            # 使用更强的 Embedding 模型以提高 Testset 质量 (Evaluation 通常不惜成本)
             generator_embed = setup_embed_model("text-embedding-v4")
             
             generator = TestsetGenerator(
@@ -133,8 +132,6 @@ async def generate_testset_pipeline(db: AsyncSession, testset_id: int, source_do
                 embedding_model=LangchainEmbeddingsWrapper(generator_embed)
             )
             
-            # generate_with_langchain_docs 会使用传入的 chunks (Nodes) 生成问题
-            # 因为我们传入的是 Docling 切好的 chunks，所以生成的 Context 也是基于 Docling 的
             return generator.generate_with_langchain_docs(
                 langchain_docs, 
                 testset_size=settings.TESTSET_SIZE
@@ -215,7 +212,6 @@ async def run_experiment_pipeline(db: AsyncSession, experiment_id: int):
         db.add(exp)
         await db.commit()
 
-        # 2. 准备组件
         kb = exp.knowledge
         ts = exp.testset
         dataset_name = f"testset_{ts.id}_{ts.name}"
@@ -230,28 +226,26 @@ async def run_experiment_pipeline(db: AsyncSession, experiment_id: int):
         embed_model = setup_embed_model(kb.embed_model)
         
         vector_store_manager = VectorStoreManager(f"kb_{kb.id}", embed_model)
-        # [Fix] 修正方法名为 ensure_index (原为 ensure_collection 笔误)
+        
         await asyncio.to_thread(vector_store_manager.ensure_index)
         
         qa_service = QAService(student_llm) 
-        
-        # [Fix] 初始化 Rerank Service (Pipeline 依赖)
+
         target_rerank_model = settings.RERANK_MODEL_NAME
         rerank_service = RerankService(
             base_url=settings.RERANK_BASE_URL,
             model_name=target_rerank_model
         )
 
-        # [Fix] 获取用户配置的 top_k (默认为 3)
         user_top_k = params.get("top_k", settings.TOP_K)
 
         pipeline = RAGPipeline.build(
             store_manager=vector_store_manager,
             qa_service=qa_service,
-            rerank_service=rerank_service, # [Fix] 传入 RerankService
-            recall_top_k=settings.RECALL_TOP_K, # [Fix] 使用系统默认的广召回 TopK (e.g. 50)
+            rerank_service=rerank_service, 
+            recall_top_k=settings.RECALL_TOP_K, 
             strategy=params.get("strategy", "default"),
-            knowledge_id=kb.id # 明确指定 KB ID 以便使用 Filter
+            knowledge_id=kb.id 
         )
         
         evaluator = RAGEvaluator(

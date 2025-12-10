@@ -154,8 +154,7 @@ async def check_rate_limits(
     """
     [Rate Limiter] 基于每日配额的限流 (Requests & Tokens)
     """
-    # 1. 获取当前日期作为 Key 的一部分 (e.g., "2023-10-27")
-    # 使用 UTC 还是本地时间取决于您的业务需求，这里建议与数据库时区保持一致
+    # 获取当前日期作为 Key 的一部分 (e.g., "2023-10-27")
     today = datetime.datetime.now().strftime("%Y-%m-%d")
     user_id = current_user.id
     

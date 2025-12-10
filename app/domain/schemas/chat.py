@@ -50,7 +50,7 @@ class ChatRequest(BaseModel):
     llm_model: Optional[str] = None
     rerank_model_name: Optional[str] = None
     
-    # 🟢 [New] 支持自定义 Prompt 名称 (对应 Langfuse 中的 Prompt Name)
+    # 支持自定义 Prompt 名称 (对应 Langfuse 中的 Prompt Name)
     prompt_name: Optional[str] = None 
     
     # 流式标记

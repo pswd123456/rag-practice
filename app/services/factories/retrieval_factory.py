@@ -16,7 +16,7 @@ class RetrievalFactory:
         top_k: int = 50,          
         knowledge_id: Optional[int] = None,
         knowledge_ids: Optional[List[int]] = None, 
-        do_collapse: bool = True, # [New] 默认 True 保持向后兼容
+        do_collapse: bool = True, 
         **kwargs: Any
     ) -> BaseRetriever:
         

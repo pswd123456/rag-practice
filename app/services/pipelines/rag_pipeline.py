@@ -53,8 +53,6 @@ class RAGPipeline:
         except Exception:
             self.tokenizer = tiktoken.get_encoding("cl100k_base")
         
-        # [Note] rag_chain 仅作为概念展示或简单同步调用入口，
-        # 实际业务主要走 async_query 和 astream_with_sources
         self.rag_chain = (
             {
                 "context": RunnableLambda(self.retrieval_service.afetch) | self._format_docs,
@@ -80,7 +78,7 @@ class RAGPipeline:
         工厂方法：组装 RAGPipeline
         """
         
-        # [Modify] 强制关闭 Retriever 内部的折叠逻辑，
+        # 强制关闭 Retriever 内部的折叠逻辑，
         # 将折叠操作延迟到 Rerank 之后，在 Pipeline 层面处理。
         retriever = RetrievalFactory.create_retriever(
             store_manager=store_manager,
@@ -103,7 +101,7 @@ class RAGPipeline:
 
     def _format_docs(self, docs: List[Document]) -> str:
         """
-        [Smart Truncation v2] 智能截断策略 (Token Aware)
+        智能截断策略 (Token Aware)
         """
     
         max_total_tokens = settings.MAX_TOTAL_TOKENS    

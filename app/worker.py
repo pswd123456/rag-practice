@@ -24,9 +24,8 @@ from app.domain.models import Document, DocStatus, Testset, Experiment, Knowledg
 setup_logging(str(settings.LOG_FILE_PATH), log_level="INFO")
 logger = logging.getLogger("app.worker")
 
-# ... [保留原有的 check_and_fix_zombie_tasks 函数不变] ...
 async def check_and_fix_zombie_tasks():
-    # (此处代码保持原样，它是启动时的全量清理)
+
     """
     [Self-Healing] 检查并修复因 Worker 崩溃或重启而残留的 '僵尸任务'。
     策略升级：清理所有处于 非终态 (COMPLETED/FAILED) 且 非等待态 (PENDING) 的任务。
@@ -41,8 +40,7 @@ async def check_and_fix_zombie_tasks():
 
     async with async_session_maker() as db:
         try:
-            # --- 诊断：打印当前文档状态分布 ---
-            # 这有助于排查为什么某些文档没被检测到
+
             try:
                 stats_stmt = select(Document.status, func.count(Document.id)).group_by(Document.status)
                 stats = (await db.exec(stats_stmt)).all()
@@ -111,9 +109,6 @@ async def check_and_fix_zombie_tasks():
             logger.error(f"❌ 执行僵尸任务修复时发生错误: {e}", exc_info=True)
             await db.rollback()
 
-# -----------------------------------------------------------
-# [New] 主动清理机制 (Cron Job)
-# -----------------------------------------------------------
 async def fix_stale_tasks(ctx: Any):
     """
     [Watchdog] 定时巡检任务。
@@ -121,8 +116,7 @@ async def fix_stale_tasks(ctx: Any):
     """
     # 阈值设定：1 小时。即使是大文件 Docling 解析，也不应该超过 1 小时。
     TIMEOUT_HOURS = 1
-    # 注意：使用 utcnow 还是 now 取决于数据库时区设置，这里假设 naive datetime 或 local time
-    # 为了保险，通常建议数据库统一存 UTC，这里使用 datetime.now() 适配大多数默认配置
+
     threshold_time = datetime.now() - timedelta(hours=TIMEOUT_HOURS)
     
     async with async_session_maker() as db:
@@ -181,7 +175,6 @@ async def shutdown(ctx: Any):
     logger.info("👷 Worker 进程关闭...")
     await engine.dispose()
 
-# ... [Worker 任务定义保持不变] ...
 async def process_document_task(ctx: Any, doc_id: int):
     logger.info(f"[Task] 开始处理文档: ID {doc_id}")
     try:
@@ -189,7 +182,7 @@ async def process_document_task(ctx: Any, doc_id: int):
     except Exception as e:
         logger.error(f"[Task] 文档处理异常 (ID {doc_id}): {e}", exc_info=True)
 
-# 增加超时时间
+# 超时时间
 process_document_task.max_tries = 3 # type: ignore
 process_document_task.retry_delay = 5 # type: ignore
 process_document_task.timeout = 600 # type: ignore
@@ -243,7 +236,6 @@ class WorkerSettings:
         port=settings.REDIS_PORT
     )
     
-    # 🟢 [New] 注册定时任务
     # 每 10 分钟运行一次 fix_stale_tasks
     cron_jobs = [
         cron(fix_stale_tasks, minute={0, 10, 20, 30, 40, 50})

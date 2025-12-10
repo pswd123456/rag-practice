@@ -126,33 +126,24 @@ async def handle_delete_knowledge(
     """
     异步删除知识库
     """
-    # [Fix] 修复 UnmappedInstanceError
-    # 不能使用 get_knowledge_by_id (它返回 KnowledgeRead Pydantic Schema)
-    # 我们需要获取 ORM 对象来执行 update
-    
-    # 1. 获取数据库实体
+   
     knowledge = await db.get(Knowledge, knowledge_id)
     if not knowledge:
         raise HTTPException(status_code=404, detail="Knowledge not found")
 
-    # 2. 校验权限 (仅 OWNER 可删除)
-    # 使用 check_privilege 辅助函数
     await knowledge_crud.check_privilege(
         db, knowledge_id, current_user.id, 
         [UserKnowledgeRole.OWNER]
     )
     
-    # 3. 标记状态
     knowledge.status = KnowledgeStatus.DELETING
     db.add(knowledge)
     await db.commit()
 
     try:
-        # [Fix] 传递 current_user.id 给 worker 任务
         await redis.enqueue_job("delete_knowledge_task", knowledge_id, current_user.id)
     except Exception as e:
         logger.error(f"Redis Enqueue Failed: {e}")
-        # 任务入队失败，将状态置为 FAILED 以便用户感知
         knowledge.status = KnowledgeStatus.FAILED
         db.add(knowledge)
         await db.commit()
@@ -166,7 +157,7 @@ async def handle_get_knowledge_documents(
     db: AsyncSession = Depends(deps.get_db_session),
     current_user: User = Depends(deps.get_current_active_user),
 ):
-    # 校验 Knowledge 权限
+ 
     await knowledge_crud.get_knowledge_by_id(db, knowledge_id, current_user.id)
     
     statement = (
@@ -252,18 +243,18 @@ async def handle_delete_document(
     """
     删除文档 (需反查 Knowledge 权限)
     """
-    # 1. 先查 Document 找到 knowledge_id
+  
     doc = await db.get(Document, doc_id)
     if not doc:
         raise HTTPException(status_code=404, detail="文档不存在")
     
-    # 2. [RBAC Check] 检查用户在对应 KB 中是否有 OWNER/EDITOR 权限
+   
     await knowledge_crud.check_privilege(
         db, doc.knowledge_base_id, current_user.id,
         [UserKnowledgeRole.OWNER, UserKnowledgeRole.EDITOR]
     )
     
-    # 3. 执行删除
+   
     try:
         return await delete_document_and_vectors(db=db, doc_id=doc_id)
     except HTTPException as e:

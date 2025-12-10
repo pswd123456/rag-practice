@@ -70,7 +70,6 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# 🟢 [FIX] 配置 CORS 中间件
 # 允许来自前端的跨域请求 (localhost:3000, localhost:8501 等)
 origins = [
     "http://localhost",

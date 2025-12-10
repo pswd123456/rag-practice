@@ -25,7 +25,6 @@ def rrf_fusion(
     if weights is None:
         weights = [1.0] * len(list_of_list_docs)
     
-    # [Log] 记录输入的各路召回数量
     input_stats = [len(docs) for docs in list_of_list_docs]
     logger.debug(f"Starting RRF Fusion. Input streams: {len(list_of_list_docs)} | Doc counts: {input_stats} | Weights: {weights}")
 
@@ -63,8 +62,7 @@ def rrf_fusion(
 
     # 3. 还原为 Document 列表
     final_docs = [item["doc"] for item in sorted_results]
-    
-    # [Log] 记录融合结果
+
     logger.info(
         f"RRF Fusion completed. "
         f"Merged {sum(input_stats)} docs from {len(list_of_list_docs)} streams into {len(final_docs)} unique docs. "

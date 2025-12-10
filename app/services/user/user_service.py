@@ -19,11 +19,10 @@ class UserService:
         email: str, 
         password: str, 
         full_name: str = None,
-        plan: UserPlan = UserPlan.FREE # [New] 默认为 FREE
+        plan: UserPlan = UserPlan.FREE
     ) -> User:
         hashed = get_password_hash(password)
-        
-        # [New] 根据 Plan 获取默认配置
+
         plan_config = settings.PLANS.get(plan.value, settings.PLANS["FREE"])
         
         db_obj = User(
