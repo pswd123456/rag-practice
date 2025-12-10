@@ -30,18 +30,24 @@ RUN pip install uv -i https://mirrors.aliyun.com/pypi/simple/
 
 RUN uv pip install --system torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 
-COPY requirements.txt .
+# COPY requirements.txt .
+# 复制锁定的版本文件
+COPY requirements.lock .
 
+# 设置 uv 的默认镜像源环境变量
 ENV UV_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
 
+# 使用 uv 安装剩余依赖
+# RUN --mount=type=cache,target=/root/.cache/uv \
+#     uv pip install --system -r requirements.txt
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv pip install --system -r requirements.txt
+    uv pip install --system -r requirements.lock
+
 
 # COPY models /app/models
 # -----------------------------------------------------------------
 # 3. 源码层
 # -----------------------------------------------------------------
-    
 COPY . .
 ENV PYTHONPATH=/app
 

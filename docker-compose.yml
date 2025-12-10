@@ -285,7 +285,7 @@ services:
       minio:
         condition: service_started
     ports:
-      - "5000:3000"
+      - "3001:3000"
     environment:
       - NODE_ENV=production
       - CLICKHOUSE_URL=http://clickhouse:8123

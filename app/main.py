@@ -14,6 +14,7 @@ from app.db.session import create_db_and_tables
 from app.core.config import settings
 from app.core.logging_setup import setup_logging
 from app.services.retrieval.es_client import close_es_client, wait_for_es 
+from app.services.minio.file_storage import get_minio_client
 
 setup_logging(str(settings.LOG_FILE_PATH), log_level="INFO")
 logger = logging.getLogger("app.main")
@@ -35,6 +36,29 @@ async def lifespan(app: FastAPI):
             RedisSettings(host=settings.REDIS_HOST, port=settings.REDIS_PORT)
         )
         logger.info("✅ Redis 连接池就绪。")
+
+        logger.info("⏳ 正在检查 MinIO 存储桶状态...")
+        try:
+            minio_client = get_minio_client()
+
+            buckets_to_check = [
+                settings.MINIO_BUCKET_NAME,
+                "langfuse-events" 
+            ]
+            
+            for bucket in buckets_to_check:
+                if not minio_client.bucket_exists(bucket):
+                    logger.info(f"检测到 Bucket '{bucket}' 不存在，正在自动创建...")
+                    minio_client.make_bucket(bucket)
+                    logger.info(f"✅ Bucket '{bucket}' 创建成功。")
+                else:
+                    logger.debug(f"✅ Bucket '{bucket}' 已存在。")
+            
+            logger.info("✅ MinIO 初始化完成。")
+
+        except Exception as e:
+            logger.error(f"❌ MinIO 初始化检查失败: {e}", exc_info=True)
+            raise e    
 
         app.state.redis = Redis.from_url(
             f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}", 

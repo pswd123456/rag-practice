@@ -50,7 +50,6 @@ class DoclingLoader:
         pipeline_options.do_table_structure = True # 开启表格结构提取
         pipeline_options.do_formula_enrichment = True
         pipeline_options.do_picture_description = True 
-        # 图片描述用的默认的256M的SmolVLM, 一言难尽, 由于机器性能限制只能用这个, 后续可以自己换一下
         pipeline_options.picture_description_options = PictureDescriptionVlmOptions(
             repo_id="HuggingFaceTB/SmolVLM-256M-Instruct",
             
