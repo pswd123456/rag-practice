@@ -80,7 +80,7 @@
 
 ## 🏗️ 系统架构
 
-```
+```mermaid
 graph TD
     %% Define Styles
     classDef client fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
@@ -153,7 +153,7 @@ graph TD
 
 RAG 对话核心流程
 
-```
+```mermaid
 sequenceDiagram
     autonumber
     actor User as 用户 (Frontend)
@@ -223,7 +223,7 @@ sequenceDiagram
 
 异步文档摄取流程
 
-```
+```mermaid
 sequenceDiagram
     autonumber
     actor User as 用户 (Admin)
