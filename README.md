@@ -66,35 +66,29 @@
 
 ## 🖼️ Screenshots
 
-![[Pasted image 20251210202209.png]]
+![Pasted image 20251210202209.png](assets/Pasted image 20251210202209.png)
 
 <center> 主页面 </center>
 
 ********
 
-![[Pasted image 20251210201852.png]]
+![Pasted image 20251210201852.png](assets/Pasted image 20251210201852.png)
 
-![[Pasted image 20251210201913.png]]
+![Pasted image 20251210201913.png](assets/Pasted image 20251210201913.png)
 
 <center>权限管理/文件上传</center>
 
 ********
 
-![[Pasted image 20251211010847.png]]
+![Pasted image 20251211010847.png](assets/Pasted image 20251211010847.png)
 
 <center>查看来源和页码/显示reranker的置信度</center>
 
 ********
 
-![[Pasted image 20251211164456.png]]
+![Pasted image 20251211164456.png](assets/Pasted image 20251211164456.png)
 
 <center>可视化的测试集管理和实验运行</center>
-
-********
-
-![[Pasted image 20251211170232.png]]
-
-<center>使用langfuse监控对话和实验链路/进行prompt版本管理</center>
 
 ********
 
@@ -450,18 +444,18 @@ docker-compose up -d --force-recreate
 密码 `admin123`
 
 #### 首次登录后配置
+
 - **建议:** 手动注册登陆[langfuse-server后台](localhost:3001)
 - 在API生成公私钥, 将公私钥填入.env
 - 重启容器 --force-recreate
 - 创建两个prompt:
 	`rag-default`: 普通对话的prompt
-	![[Pasted image 20251211005137.png]]
+	![Pasted image 20251211005137.png](assets/Pasted image 20251211005137.png)
 	`rag-query-rewrite`: 重写query的prompt
 		需要包含`placeholder`: `chat_history`
 		以及一个`{{question}}`变量
 	以启用langfuse tracing和其他功能
 	注: 如果不创建上述两个prompt, langfuse不会正常工作, ragas测试功能不会正常工作
-
 - 更改`docker-compose.yml`内的性能和安全选项(可选)
 
 #### 🔌 服务端口对照表 (Service Ports)
