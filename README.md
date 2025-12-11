@@ -21,9 +21,7 @@
 </p>
 
 </div>
-
 ---
-
 ## 📖 项目简介
 
 **RAG Practice** 是一个尝试将 RAG 理论转化为代码的工程实践。与简单的 Demo 不同，本项目致力于探索 RAG 系统中从简单的向量检索走向生产级系统的过程中遇到的实际问题。
@@ -68,29 +66,35 @@
 
 ## 🖼️ Screenshots
 
-![主页面](assets/Pasted%20image%2020251210202209.png)
+![[Pasted image 20251210202209.png]]
 
 <center> 主页面 </center>
 
 ********
 
-![权限管理图1](assets/Pasted%20image%2020251210201852.png)
+![[Pasted image 20251210201852.png]]
 
-![权限管理图2](assets/Pasted%20image%2020251210201913.png)
+![[Pasted image 20251210201913.png]]
 
 <center>权限管理/文件上传</center>
 
 ********
 
-![查看来源](assets/Pasted%20image%2020251211010847.png)
+![[Pasted image 20251211010847.png]]
 
 <center>查看来源和页码/显示reranker的置信度</center>
 
 ********
 
-![可视化测试](assets/Pasted%20image%2020251211164456.png)
+![[Pasted image 20251211164456.png]]
 
 <center>可视化的测试集管理和实验运行</center>
+
+********
+
+![[Pasted image 20251211170232.png]]
+
+<center>使用langfuse监控对话和实验链路/进行prompt版本管理</center>
 
 ********
 
@@ -451,9 +455,7 @@ docker-compose up -d --force-recreate
 - 重启容器 --force-recreate
 - 创建两个prompt:
 	`rag-default`: 普通对话的prompt
-
-	![prompt](assets/Pasted%20image%2020251211005137.png)
-
+	![[Pasted image 20251211005137.png]]
 	`rag-query-rewrite`: 重写query的prompt
 		需要包含`placeholder`: `chat_history`
 		以及一个`{{question}}`变量
