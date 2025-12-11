@@ -28,10 +28,10 @@ RUN apt-get update && apt-get install -y \
 
 RUN pip install uv -i https://mirrors.aliyun.com/pypi/simple/
 
-# RUN uv pip install --system torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
-COPY torch-2.5.1+cu121-cp311-cp311-linux_x86_64.whl /tmp/
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv pip install --system /tmp/torch-*.whl
+RUN uv pip install --system torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+# COPY torch-2.5.1+cu121-cp311-cp311-linux_x86_64.whl /tmp/
+# RUN --mount=type=cache,target=/root/.cache/uv \
+#     uv pip install --system /tmp/torch-*.whl
 # 如果下torch一直失败可以手动下载到项目根目录用上面这两个安装
 
 COPY requirements.txt .

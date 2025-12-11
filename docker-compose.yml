@@ -260,13 +260,13 @@ services:
     restart: always
     # === 方案 A: 本地模式 (MODEL_SOURCE=local) ===
     # 将下载好的模型挂载到 /data，并指定 --model-id /data
-    volumes:
-      - ./language_models/bge-reranker-v2-m3:/data
+    # volumes:
+    #   - ./language_models/bge-reranker-v2-m3:/data
     
     # === 方案 B: 自动下载模式 (默认) ===
     # 挂载 cache 卷以持久化下载的模型，直接指定 HF Hub ID
-    # volumes:
-    #    - model_cache:/data
+    volumes:
+       - model_cache:/data
     ports:
       - "8003:80"
     environment:

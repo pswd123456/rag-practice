@@ -66,27 +66,29 @@
 
 ## 🖼️ Screenshots
 
-![[Pasted image 20251210202209.png]]
+![主页面](assets/Pasted%20image%2020251210202209.png)
 
 <center> 主页面 </center>
 
 ********
 
-![[Pasted image 20251210201852.png]]
+![权限管理图1](assets/Pasted%20image%2020251210201852.png)
 
-![[Pasted image 20251210201913.png]]
+![权限管理图2](assets/Pasted%20image%2020251210201913.png)
 
 <center>权限管理/文件上传</center>
 
 ********
 
-![[Pasted image 20251211010847.png]]
+![查看来源](assets/Pasted%20image%2020251211010847.png)
 
 <center>查看来源和页码/显示reranker的置信度</center>
 
-![[Pasted image 20251211010944.png]]
+********
 
-<center>多知识库召回/调节返回Topk</center>
+![可视化测试](assets/Pasted%20image%2020251211164456.png)
+
+<center>可视化的测试集管理和实验运行</center>
 
 ********
 
@@ -108,72 +110,74 @@
 ## 🏗️ 系统架构
 
 ```mermaid
-%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#ffcc00', 'edgeLabelBackground':'#ffffff', 'tertiaryColor': '#f4f4f4', 'fontFamily': 'Inter, sans-serif'}}}%%
-flowchart TD
-    %% 样式定义
-    classDef client fill:#E3F2FD,stroke:#1565C0,stroke-width:2px,color:#0D47A1,rx:10,ry:10;
-    classDef api fill:#E8F5E9,stroke:#2E7D32,stroke-width:2px,color:#1B5E20,rx:10,ry:10;
-    classDef worker fill:#FFF8E1,stroke:#FBC02D,stroke-width:2px,color:#F57F17,rx:5,ry:5;
-    classDef db fill:#F3E5F5,stroke:#7B1FA2,stroke-width:2px,color:#4A148C;
-    classDef model fill:#FFEBEE,stroke:#C62828,stroke-width:2px,color:#B71C1C,rx:5,ry:5;
-    classDef ext fill:#ECEFF1,stroke:#546E7A,stroke-width:2px,stroke-dasharray: 5 5,color:#37474F;
+graph TD
+    %% Define Styles
+    classDef client fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
+    classDef api fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px;
+    classDef worker fill:#fff9c4,stroke:#fbc02d,stroke-width:2px;
+    classDef data fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px;
+    classDef model fill:#ffebee,stroke:#c62828,stroke-width:2px;
+    classDef ext fill:#eceff1,stroke:#455a64,stroke-width:2px,stroke-dasharray: 5 5;
 
-    %% Client Layer
-    subgraph Client_Layer [💻 Frontend Layer]
-        style Client_Layer fill:#fff,stroke:#ddd,color:#333
-        Browser("User Browser (Next.js)"):::client
-    end
+    %% Client Layer
+    subgraph Client_Layer [Frontend Layer]
+        Browser("User Browser (Next.js)"):::client
+    end
 
-    %% Backend Layer
-    subgraph Backend_Layer [⚙️ Backend Services]
-        style Backend_Layer fill:#fff,stroke:#ddd,color:#333
-        API("FastAPI Service<br/>(uvicorn)"):::api
-        
-        subgraph Async_Task_Queue [Async Processing]
-            style Async_Task_Queue fill:#fafafa,stroke:#eee
-            RedisQueue[("Redis Queue (Arq)")]:::db
-            WorkerCPU("Worker (CPU)<br/>General Tasks"):::worker
-            WorkerGPU("Worker (GPU)<br/>Docling / Heavy OCR"):::worker
-        end
-    end
+    %% Backend Layer
+    subgraph Backend_Layer [Backend Services]
+        API("FastAPI Service<br/>(uvicorn)"):::api
+        
+        subgraph Async_Task_Queue [Async Processing]
+            RedisQueue("Redis Queue (Arq)"):::data
+            WorkerCPU("Worker (CPU)<br/>General Tasks"):::worker
+            WorkerGPU("Worker (GPU)<br/>Docling / Heavy OCR"):::worker
+        end
+    end
 
-    %% Data Layer
-    subgraph Data_Layer [🗄️ Infrastructure & Storage]
-        style Data_Layer fill:#fff,stroke:#ddd,color:#333
-        Postgres[("PostgreSQL<br/>(Metadata / Users)")]:::db
-        RedisCache[("Redis<br/>(Cache / Limit)")]:::db
-        MinIO[("MinIO<br/>(Object Storage)")]:::db
-        Elasticsearch[("Elasticsearch 8.17<br/>(Vector + Hybrid)")]:::db
-    end
+    %% Data Layer
+    subgraph Data_Layer [Infrastructure & Storage]
+        Postgres[("PostgreSQL<br/>(SQLModel)<br/>Metadata / Users / Chat")]:::data
+        RedisCache[("Redis<br/>Cache / Rate Limit")]:::data
+        MinIO[("MinIO<br/>Object Storage<br/>(Files)")]:::data
+        Elasticsearch[("Elasticsearch 8.17<br/>Vector + BM25<br/>(Hybrid Search)")]:::data
+    end
 
-    %% Model & Ops Layer
-    subgraph Model_Ops_Layer [🧠 Model & Observability]
-        style Model_Ops_Layer fill:#fff,stroke:#ddd,color:#333
-        TEI("TEI Service<br/>(Reranker)"):::model
-        Langfuse("Langfuse<br/>(Trace)"):::ext
-        ExternalLLM("External LLM APIs<br/>(Qwen / DeepSeek)"):::ext
-    end
+    %% Model & Ops Layer
+    subgraph Model_Ops_Layer [Model & Observability]
+        TEI[("TEI Service<br/>(Local Container)<br/>BGE-Reranker")]:::model
+        Langfuse("Langfuse<br/>(Observability / Trace)"):::ext
+        ExternalLLM("External LLM APIs<br/>(Qwen / DeepSeek / Gemini)"):::ext
+    end
 
-    %% 连线关系
-    Browser -->|HTTP / SSE| API
-    
-    API -->|RW| Postgres
-    API -->|Auth| RedisCache
-    API -->|Upload| MinIO
-    API -->|Enqueue| RedisQueue
-    API -->|Search| Elasticsearch
-    API -->|Rerank| TEI
-    API -->|Chat| ExternalLLM
-    API -.->|Trace| Langfuse
+    %% Relationships - User Flow
+    Browser -->|HTTP / SSE| API
+    
+    %% Relationships - API Logic
+    API -->|Read/Write| Postgres
+    API -->|Auth/Limit| RedisCache
+    API -->|Upload| MinIO
+    API -->|Enqueue Jobs| RedisQueue
+    API -->|Search Query| Elasticsearch
+    API -->|Rerank| TEI
+    API -->|Chat Completion| ExternalLLM
+    API -.->|Trace| Langfuse
 
-    RedisQueue -->|Consume| WorkerCPU & WorkerGPU
-    
-    WorkerCPU & WorkerGPU -->|Read| MinIO
-    WorkerCPU & WorkerGPU -->|Update| Postgres
-    WorkerCPU & WorkerGPU -->|Index| Elasticsearch
-    WorkerCPU & WorkerGPU -->|Gen Testset| ExternalLLM
-    
-    Elasticsearch <-->|Hybrid Search| API
+    %% Relationships - Worker Logic
+    RedisQueue -->|Consume| WorkerCPU
+    RedisQueue -->|Consume| WorkerGPU
+    
+    WorkerCPU & WorkerGPU -->|Read File| MinIO
+    WorkerCPU & WorkerGPU -->|Update Status| Postgres
+    WorkerCPU & WorkerGPU -->|Index Chunks| Elasticsearch
+    WorkerCPU & WorkerGPU -->|Gen Testset| ExternalLLM
+    
+    %% Specific Flows
+    Elasticsearch <-->|Hybrid Search + RRF| API
+    
+    %% Legend / Notes
+    note1[Docling Processing<br/>happens in GPU Worker] --- WorkerGPU
+    note2[Vector + Keyword Fusion<br/>happens in App Layer] --- API
 ```
 
 RAG 对话核心流程
@@ -182,137 +186,124 @@ RAG 对话核心流程
 
 ```mermaid
 sequenceDiagram
-    autonumber
-    %% 全局配置
-    %%{init: {'theme': 'base', 'themeVariables': { 'fontFamily': 'Inter', 'fontSize': '14px'}}}%%
-    
-    %% 分组定义 (Box)
-    box transparent #UserLayer
-    actor User as 👤 User
-    end
+    autonumber
+    actor User as 用户 (Frontend)
+    participant API as FastAPI Server
+    participant Redis as Redis (Limit)
+    participant DB as PostgreSQL
+    participant Pipeline as RAG Pipeline (App Layer)
+    participant LLM as LLM API (Qwen/DeepSeek)
+    participant ES as Elasticsearch
+    participant TEI as TEI Service (Rerank)
 
-    box "Application Layer" #f9f9f9
-    participant API as FastAPI
-    participant Pipeline as RAG Pipeline
-    end
+    User->>API: POST /chat/.../completion (Query)
+    
+    %% 1. 前置检查
+    Note over API,Redis: 1. Rate Limiting Check
+    API->>Redis: Check & Incr Requests
+    alt Limit Exceeded
+        Redis-->>API: 429 Too Many Requests
+        API-->>User: Error
+    else Limit OK
+        Redis-->>API: Allow
+    end
 
-    box "Infrastructure" #eef
-    participant Redis as Redis (Limit)
-    participant DB as Postgres
-    participant ES as Elasticsearch
-    end
+    %% 2. 准备上下文
+    API->>DB: Save "User" Message
+    API->>DB: Fetch Chat History (Window Size)
+    
+    %% 3. 进入 Pipeline
+    rect rgb(240, 248, 255)
+        Note over API,Pipeline: 2. RAG Pipeline Start
+        API->>Pipeline: Initialize Pipeline
+        
+        %% Query Rewrite
+        Note right of Pipeline: [Phase A] Query Rewrite
+        Pipeline->>LLM: Rewrite(Query + History)
+        LLM-->>Pipeline: Return "Standalone Query"
 
-    box "AI Services" #ffe
-    participant TEI as TEI (Rerank)
-    participant LLM as LLM API
-    end
+        %% Hybrid Search
+        Note right of Pipeline: [Phase B] Hybrid Retrieval
+        par Vector Search
+            Pipeline->>ES: KNN Query (Dense Vector)
+            ES-->>Pipeline: Vector Docs
+        and Keyword Search
+            Pipeline->>ES: Match Query (BM25 Sparse)
+            ES-->>Pipeline: Keyword Docs
+        end
+        Note right of Pipeline: RRF Fusion (Application Layer)
+        Pipeline->>Pipeline: Calculate RRF Scores
 
-    User->>API: POST /chat/completion
-    
-    %% 1. 前置检查
-    rect rgb(240, 248, 255)
-    note right of API: 🛡️ Pre-Check Phase
-    API->>Redis: Rate Limit Check
-    alt Limit Exceeded
-        Redis-->>API: 429 Error
-        API-->>User: Error Msg
-    else Allowed
-        Redis-->>API: OK
-    end
-    API->>DB: Fetch History (Window Size)
-    end
+        %% Rerank
+        Note right of Pipeline: [Phase C] Reranking
+        Pipeline->>TEI: POST /rerank (Query, Retrieved Docs)
+        TEI-->>Pipeline: Scored & Sorted Docs
+        Pipeline->>Pipeline: Collapse (Child -> Parent) & Top-K Cut
 
-    %% 2. 核心 Pipeline
-    rect rgb(255, 250, 240)
-    note right of API: ⚙️ RAG Pipeline Execution
-    API->>Pipeline: Init Pipeline
-    
-    %% A. Rewrite
-    Pipeline->>LLM: [A] Query Rewrite
-    LLM-->>Pipeline: Standalone Query
+        %% Generation
+        Note right of Pipeline: [Phase D] Generation
+        Pipeline->>Pipeline: Token-Aware Truncation
+        Pipeline->>LLM: Chat Completion (System Prompt + Context)
+        LLM-->>User: SSE Stream (Tokens)
+    end
 
-    %% B. Search
-    par Parallel Search
-        Pipeline->>ES: Vector Search (KNN)
-        Pipeline->>ES: Keyword Search (BM25)
-    end
-    ES-->>Pipeline: Return Docs
-    Pipeline->>Pipeline: RRF Fusion
-
-    %% C. Rerank
-    Pipeline->>TEI: [C] Rerank (Docs + Query)
-    TEI-->>Pipeline: Scored Docs
-    Pipeline->>Pipeline: Top-K Cut
-
-    %% D. Generation
-    Pipeline->>LLM: [D] Chat Completion (Stream)
-    LLM-->>User: SSE Stream (Token by Token)
-    end
-
-    %% 3. 收尾
-    API->>DB: Async Save Message
+    %% 4. 收尾
+    API->>Redis: Update Token Usage
+    API->>DB: Save "Assistant" Message & Sources
 ```
 
 异步文档摄取流程
 
 ```mermaid
 sequenceDiagram
-    autonumber
-    %%{init: {'theme': 'base', 'themeVariables': {'fontFamily': 'arial'}}}%%
-    
-    box "Control Plane" #f4f4f4
-    actor User as Admin
-    participant API as FastAPI
-    participant DB as Postgres
-    participant Redis as Redis Queue
-    end
+    autonumber
+    actor User as 用户 (Admin)
+    participant API as FastAPI Server
+    participant MinIO as Object Storage
+    participant DB as PostgreSQL
+    participant Redis as Redis (Arq Queue)
+    participant Worker as GPU Worker (Docling)
+    participant ES as Elasticsearch
 
-    box "Storage Layer" #e1f5fe
-    participant MinIO as Object Store
-    participant ES as Elasticsearch
-    end
+    %% 1. 上传阶段
+    User->>API: POST /knowledge/{id}/upload (File)
+    API->>MinIO: Save File (Stream)
+    API->>DB: Create Document (Status: PENDING)
+    
+    %% 2. 任务分发
+    alt is PDF/Docx
+        API->>Redis: Enqueue to "docling_queue"
+    else is Text/MD
+        API->>Redis: Enqueue to "default_queue"
+    end
+    API-->>User: 200 OK (Task Created)
 
-    box "Compute Plane" #fff9c4
-    participant Worker as GPU Worker
-    end
+    %% 3. 异步处理阶段 (Worker)
+    loop Worker Polling
+        Worker->>Redis: Pop Job
+    end
+    
+    rect rgb(255, 250, 240)
+        Note over Worker,MinIO: Task: process_document_pipeline
+        Worker->>DB: Update Status: PROCESSING
+        Worker->>MinIO: Download File
+        
+        %% Docling Processing
+        Note right of Worker: [Step 1] Docling Analysis
+        Worker->>Worker: Layout Analysis & OCR (GPU)
+        Worker->>Worker: Hybrid Chunking (Enrich Headers)
 
-    %% 1. 上传
-    User->>API: 📤 Upload File
-    API->>MinIO: Stream Save
-    API->>DB: Create Record (PENDING)
-    
-    alt is Complex Doc (PDF/Docx)
-        API->>Redis: Push to "docling_queue"
-    else is Simple Text
-        API->>Redis: Push to "default_queue"
-    end
-    API-->>User: 202 Accepted
-
-    %% 2. 异步处理
-    loop Worker Polling
-        Worker->>Redis: Pop Job
-    end
-    
-    rect rgb(236, 239, 241)
-    note right of Worker: 🔄 Document Processing Pipeline
-    
-    Worker->>DB: Update: PROCESSING
-    Worker->>MinIO: Fetch File
-    
-    %% Docling Analysis
-    Worker->>Worker: 🖥️ Layout Analysis & OCR (GPU)
-    Worker->>Worker: ✂️ Hybrid Chunking
-    
-    %% Indexing
-    Worker->>Worker: 🔢 Generate Embeddings
-    Worker->>ES: Bulk Index
-    
-    alt Success
-        Worker->>DB: Update: COMPLETED
-    else Failure
-        Worker->>DB: Update: FAILED (Reason)
-    end
-    end
+        %% Vectorization
+        Note right of Worker: [Step 2] Vectorization
+        Worker->>Worker: Embedding Generation
+        Worker->>ES: Bulk Index (Vector + Metadata)
+        
+        alt Success
+            Worker->>DB: Update Status: COMPLETED
+        else Failure
+            Worker->>DB: Update Status: FAILED + Error Msg
+        end
+    end
 ```
 
 ## 🚀 快速开始
@@ -458,7 +449,9 @@ docker-compose up -d --force-recreate
 - 重启容器 --force-recreate
 - 创建两个prompt:
 	`rag-default`: 普通对话的prompt
-	![[Pasted image 20251211005137.png]]
+
+	![prompt](assets/Pasted%20image%2020251211005137.png)
+
 	`rag-query-rewrite`: 重写query的prompt
 		需要包含`placeholder`: `chat_history`
 		以及一个`{{question}}`变量

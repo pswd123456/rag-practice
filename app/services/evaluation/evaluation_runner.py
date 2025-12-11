@@ -130,9 +130,10 @@ class RAGEvaluator:
         """
         计算单条数据的 Ragas 分数，用于 Langfuse Experiment Loop
         """
+        response_text = answer.content if hasattr(answer, 'content') else str(answer)
         sample = SingleTurnSample(
             user_input=question,
-            response=answer,
+            response=response_text,
             retrieved_contexts=contexts,
             reference=ground_truth
         )
