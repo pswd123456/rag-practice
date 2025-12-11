@@ -398,7 +398,7 @@ _若遇到 Docker 镜像拉取失败，请检查网络连接或配置 Docker 镜
 │   └── preprocessor_config.json
 ```
 
-- 如果有百度网盘会员，可以使用此[链接](https://www.google.com/search?q=https://pan.baidu.com/s/1g9li0HHK0jA1MUTco9vzvA%3Fpwd%3Dchvt "null")下载整合包
+- 如果有百度网盘会员，可以使用此[链接](https://pan.baidu.com/s/1g9li0HHK0jA1MUTco9vzvA%3Fpwd%3Dchvt "null")下载整合包
     
 - 也可以自行到HuggingFace单独下载
     
@@ -430,7 +430,7 @@ docker-compose up -d --force-recreate
 
 ### **访问服务**
 
-访问前端: [localhost:3000](https://www.google.com/search?q=http://localhost:3000/login "null")
+访问前端: [localhost:3000](http://localhost:3000/login "null")
 
 初始管理员账号 -> 使用这个账号前端才能看见评测面板
 
