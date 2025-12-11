@@ -4,15 +4,19 @@ import logging
 import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware # 🟢 引入 CORS 中间件
+from fastapi.middleware.cors import CORSMiddleware 
+
 from arq import create_pool
 from arq.connections import RedisSettings
 from redis.asyncio import Redis
 
 from app.api import api_router
-from app.db.session import create_db_and_tables
+from app.db.session import create_db_and_tables, async_session_maker
+from app.db.init_db import init_db
+
 from app.core.config import settings
 from app.core.logging_setup import setup_logging
+
 from app.services.retrieval.es_client import close_es_client, wait_for_es 
 from app.services.minio.file_storage import get_minio_client
 
@@ -30,6 +34,10 @@ async def lifespan(app: FastAPI):
     try:
         await create_db_and_tables()
         logger.info("✅ 数据库初始化完成。")
+
+        logger.info("正在检查初始化数据...")
+        async with async_session_maker() as session:
+            await init_db(session)
 
         logger.info(f"正在初始化 Redis 连接池 ({settings.REDIS_HOST}:{settings.REDIS_PORT})...")
         app.state.redis_pool = await create_pool(

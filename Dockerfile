@@ -28,21 +28,20 @@ RUN apt-get update && apt-get install -y \
 
 RUN pip install uv -i https://mirrors.aliyun.com/pypi/simple/
 
-RUN uv pip install --system torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+# RUN uv pip install --system torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+COPY torch-2.5.1+cu121-cp311-cp311-linux_x86_64.whl /tmp/
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --system /tmp/torch-*.whl
+# 如果下torch一直失败可以手动下载到项目根目录用上面这两个安装
 
-# COPY requirements.txt .
-# 复制锁定的版本文件
-COPY requirements.lock .
+COPY requirements.txt .
 
 # 设置 uv 的默认镜像源环境变量
 ENV UV_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
 
 # 使用 uv 安装剩余依赖
-# RUN --mount=type=cache,target=/root/.cache/uv \
-#     uv pip install --system -r requirements.txt
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv pip install --system -r requirements.lock
-
+    uv pip install --system -r requirements.txt
 
 # COPY models /app/models
 # -----------------------------------------------------------------

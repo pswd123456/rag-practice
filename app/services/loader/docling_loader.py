@@ -42,23 +42,28 @@ class DoclingLoader:
         初始化 Converter，配置 GPU 加速（如果可用）
         """
 
-        local_models_path = settings.DOCLING_MODELS_PATH
-
         # 配置 Pipeline 选项
         pipeline_options = PdfPipelineOptions()
         pipeline_options.do_ocr = True  # 开启 OCR 以处理扫描件
         pipeline_options.do_table_structure = True # 开启表格结构提取
         pipeline_options.do_formula_enrichment = True
         pipeline_options.do_picture_description = True 
+
+        if settings.MODEL_SOURCE == "local" and settings.DOCLING_MODELS_PATH:
+            logger.info(f"Docling 使用本地模型路径: {settings.DOCLING_MODELS_PATH}")
+            pipeline_options.artifacts_path = settings.DOCLING_MODELS_PATH
+        else:
+            logger.info("Docling 将自动从 HuggingFace 下载模型 (MODEL_SOURCE != local)")
+            # 不设置 artifacts_path，Docling 库默认行为是自动下载/使用缓存
+            pipeline_options.artifacts_path = None
+
         pipeline_options.picture_description_options = PictureDescriptionVlmOptions(
             repo_id="HuggingFaceTB/SmolVLM-256M-Instruct",
-            
             #"Describe this image in a few sentences."
             prompt="Briefly describe the main subject of this image. If it is a chart, explain what it shows."
         )
 
         pipeline_options.images_scale = 2.0
-        pipeline_options.artifacts_path = local_models_path
 
         # GPU 加速配置
         if torch.cuda.is_available():

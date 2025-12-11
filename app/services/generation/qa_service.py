@@ -40,6 +40,9 @@ class QAService:
             上下文:
             {context}
             
+            对话历史:
+            {chat_history}
+
             问题:
             {question}
             """.strip()

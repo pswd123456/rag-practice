@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     应用配置类
     """
     PROJECT_NAME: str = "rag-practice"
+    MODEL_SOURCE: str
 
     # --- MinIO 配置 ---
     MINIO_ENDPOINT: str = "localhost:9000"
@@ -73,7 +74,7 @@ class Settings(BaseSettings):
     EMBEDDING_DIM: int = 1024
 
     #db
-    DATABASE_URL: str
+    DATABASE_URL: str = "postgresql+asyncpg://myuser:mypassword@localhost:5432/rag_db"
 
     # retrieval
     RECALL_TOP_K: int = 50
@@ -95,7 +96,7 @@ class Settings(BaseSettings):
     # langfuse
     LANGFUSE_PUBLIC_KEY: str
     LANGFUSE_SECRET_KEY: str
-    LANGFUSE_HOST: str 
+    LANGFUSE_HOST: str = "http://localhost:3001"
     
     # rerank service
     RERANK_BASE_URL: str = "http://rerank-service:80" 
@@ -109,6 +110,10 @@ class Settings(BaseSettings):
     SECRET_KEY: str 
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+
+    # initial
+    FIRST_SUPERUSER: str = "admin@example.com"
+    FIRST_SUPERUSER_PASSWORD: str = "admin123"
 
 
     @field_validator("DATABASE_URL", mode="before")
@@ -135,15 +140,31 @@ class Settings(BaseSettings):
     @property
     def REDIS_URL(self) -> str:
         return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}"
-
+    
+    @computed_field
+    @property
+    def DOCLING_MODELS_PATH(self) -> Optional[str]:
+        # 如果是本地模式，返回绝对路径
+        if self.MODEL_SOURCE == "local":
+            local_path = PROJECT_ROOT / "language_models" 
+            if local_path.exists():
+                return str(local_path)
+            print(f"⚠️ [Config] MODEL_SOURCE=local 但未找到本地模型路径: {local_path}", file=sys.stderr)
+        
+        # 非 local 模式返回 None，Docling 会自动从 HF 下载
+        return None
     @computed_field
     @property
     def CHUNK_TOKENIZER_ID(self) -> str:
-        local_path = PROJECT_ROOT / "language_models" / "paraphrase-multilingual-MiniLM-L12-v2"
-        if local_path.exists():
-            return str(local_path)
+        # 如果是本地模式，尝试使用本地路径
+        if self.MODEL_SOURCE == "local":
+            local_path = PROJECT_ROOT / "language_models" / "paraphrase-multilingual-MiniLM-L12-v2"
+            if local_path.exists():
+                return str(local_path)
+        
+        # 默认回退到 HuggingFace ID
         return "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
-    
+
     model_config = SettingsConfigDict(
         env_file=ENV_PATH,
         env_file_encoding='utf-8',
